@@ -88,7 +88,7 @@ export default function KitchenPage() {
             type="button"
             variant="outline"
             size="sm"
-            className="border-white/20 text-white hover:bg-white/10"
+            className="border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
             onClick={() => refetch()}
             disabled={isFetching}
           >
@@ -111,7 +111,7 @@ export default function KitchenPage() {
       ) : isError ? (
         <div className="flex flex-col items-center justify-center py-32 text-white/60 gap-4">
           <p>Failed to load orders. Make sure the backend is running.</p>
-          <Button variant="outline" className="border-white/20 text-white" onClick={() => refetch()}>Retry</Button>
+          <Button variant="outline" className="border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white" onClick={() => refetch()}>Retry</Button>
         </div>
       ) : filteredOrders.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-32 text-white/60 gap-2">
@@ -192,7 +192,7 @@ export default function KitchenPage() {
                       <Button
                         type="button"
                         variant="outline"
-                        className="border-slate-600 text-white hover:bg-slate-700"
+                        className="border-slate-600 bg-transparent text-white hover:bg-slate-700 hover:text-white"
                         disabled={isUpdating}
                         onClick={() => handleReject(order.id)}
                       >
@@ -212,7 +212,7 @@ export default function KitchenPage() {
                       <Button
                         type="button"
                         variant="outline"
-                        className="border-slate-600 text-white hover:bg-slate-700"
+                        className="border-slate-600 bg-transparent text-white hover:bg-slate-700 hover:text-white"
                         disabled={isUpdating}
                         onClick={() => handleReject(order.id)}
                       >

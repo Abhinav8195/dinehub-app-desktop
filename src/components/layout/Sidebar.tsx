@@ -52,8 +52,7 @@ export function Sidebar() {
   const renderNavItem = (item: NavItem, depth = 0) => {
     const isActive =
       location.pathname === item.href ||
-      (item.href !== '/' && location.pathname.startsWith(item.href + '/')) ||
-      (item.href !== '/' && location.pathname.startsWith(item.href))
+      (item.href !== '/app' && item.href !== '/' && location.pathname.startsWith(item.href + '/'))
     const hasChildren = item.children && item.children.length > 0
     const isExpanded = expanded.includes(item.id)
     const visibleChildren = item.children?.filter(canSee) ?? []

@@ -15,8 +15,8 @@ export const BRAND = {
     border: '#E5E7EB'
   },
   urls: {
-    menu: 'https://menu.dinehub.com',
-    website: 'https://dinehub.app'
+    menu: 'https://menu.dininghub.in',
+    website: 'https://dininghub.in'
   }
 } as const
 

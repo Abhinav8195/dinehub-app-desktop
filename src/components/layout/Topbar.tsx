@@ -50,45 +50,9 @@ export function Topbar({ onCloseShift }: TopbarProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Status indicators */}
-          <div className="hidden lg:flex items-center gap-1.5 mr-2">
-            <Tooltip>
-              <TooltipTrigger>
-                <div className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${isOnline ? 'text-success' : 'text-danger'}`}>
-                  {isOnline ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>{isOnline ? 'Online' : 'Offline Mode'}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger>
-                <div className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${printerConnected ? 'text-success' : 'text-danger'}`}>
-                  <Printer className="h-3.5 w-3.5" />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>{printerConnected ? 'Printer Connected' : 'Printer Offline'}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger>
-                <div className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${cashRegisterOpen ? 'text-success' : 'text-warning'}`}>
-                  <CircleDollarSign className="h-3.5 w-3.5" />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>{cashRegisterOpen ? 'Register Open' : 'Register Closed'}</TooltipContent>
-            </Tooltip>
-          </div>
 
-          {/* Restaurant selector */}
-          <Select value={selectedRestaurantId} onValueChange={(v) => dispatch(setRestaurant(v))}>
-            <SelectTrigger className="w-[160px] h-9 hidden md:flex">
-              <SelectValue placeholder="Restaurant" />
-            </SelectTrigger>
-            <SelectContent>
-              {RESTAURANTS.map((r) => (
-                <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+
+
 
           {/* Branch selector */}
           <Select value={selectedBranchId} onValueChange={(v) => dispatch(setBranch(v))}>
@@ -102,19 +66,7 @@ export function Topbar({ onCloseShift }: TopbarProps) {
             </SelectContent>
           </Select>
 
-          {/* Command palette trigger */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="hidden sm:flex gap-2 text-muted-foreground"
-            onClick={() => dispatch(setCommandPaletteOpen(true))}
-          >
-            <Search className="h-3.5 w-3.5" />
-            <span className="text-xs">Search...</span>
-            <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium sm:flex">
-              <Command className="h-3 w-3" />K
-            </kbd>
-          </Button>
+
 
           {/* Shift status — close only when shift is open */}
           {currentShift && (
