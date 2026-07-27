@@ -123,6 +123,9 @@ export function Topbar({ onCloseShift }: TopbarProps) {
             </Badge>
           )}
 
+
+
+
           {/* Branch selector */}
           <Select value={selectedBranchId} onValueChange={(v) => dispatch(setBranch(v))}>
             <SelectTrigger className="w-[140px] h-9 hidden md:flex">
@@ -135,19 +138,7 @@ export function Topbar({ onCloseShift }: TopbarProps) {
             </SelectContent>
           </Select>
 
-          {/* Command palette trigger */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="hidden sm:flex gap-2 text-muted-foreground"
-            onClick={() => dispatch(setCommandPaletteOpen(true))}
-          >
-            <Search className="h-3.5 w-3.5" />
-            <span className="text-xs">Search...</span>
-            <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium sm:flex">
-              <Command className="h-3 w-3" />K
-            </kbd>
-          </Button>
+
 
           {/* Shift status — close only when shift is open */}
           {currentShift && (
