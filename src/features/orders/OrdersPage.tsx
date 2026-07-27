@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ColumnDef } from '@tanstack/react-table'
 import { Filter, Download, Eye, Loader2 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -12,6 +12,8 @@ import { ordersApi } from '@/api/orders.api'
 import type { PosOrder } from '@/api/types/pos.types'
 import { formatCurrency, formatRelativeTime } from '@/lib/utils'
 import { OrderDetailDialog } from './components/OrderDetailDialog'
+import { reportsApi } from '@/api/reports.api'
+import { toast } from 'sonner'
 
 type OrderRow = {
   id: string
@@ -51,12 +53,29 @@ export default function OrdersPage() {
   const [typeFilter, setTypeFilter] = useState('all')
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const queryClient = useQueryClient()
 
   const { data: orders = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['orders'],
     queryFn: () => ordersApi.list(),
     refetchInterval: 30_000,
   })
+  const updateStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) => ordersApi.updateStatus(id, status),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Order status updated') },
+    onError: (error: Error) => toast.error(error.message || 'Unable to update order'),
+  })
+  const exportOrders = async () => {
+    try {
+      const result = await reportsApi.export('xlsx')
+      const url = URL.createObjectURL(result.blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = result.filename
+      anchor.click()
+      URL.revokeObjectURL(url)
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to export orders') }
+  }
 
   const handleViewOrder = useCallback((orderId: string) => {
     setSelectedOrderId(orderId)
@@ -90,6 +109,7 @@ export default function OrdersPage() {
     {
       id: 'actions', header: '',
       cell: ({ row }) => (
+        <div className="flex items-center">
         <Button
           type="button"
           variant="ghost"
@@ -99,9 +119,11 @@ export default function OrdersPage() {
         >
           <Eye className="h-4 w-4" />
         </Button>
+        {row.original.status === 'pending' && <Button type="button" variant="ghost" size="sm" onClick={() => updateStatus.mutate({ id: row.original.id, status: 'PREPARING' })}>Start</Button>}
+        </div>
       )
     }
-  ], [handleViewOrder])
+  ], [handleViewOrder, updateStatus])
 
   return (
     <PageShell>
@@ -109,7 +131,7 @@ export default function OrdersPage() {
         <PageHeader title="Orders" description="Manage all restaurant orders across channels" actions={
           <>
             <Button variant="outline" onClick={() => refetch()}><Filter className="h-4 w-4 mr-2" /> Refresh</Button>
-            <Button variant="outline"><Download className="h-4 w-4 mr-2" /> Export</Button>
+            <Button variant="outline" onClick={exportOrders}><Download className="h-4 w-4 mr-2" /> Export</Button>
           </>
         } />
         <Tabs value={typeFilter} onValueChange={setTypeFilter}>

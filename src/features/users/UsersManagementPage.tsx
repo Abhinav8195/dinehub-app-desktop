@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { type ColumnDef } from '@tanstack/react-table'
 import {
-  Plus, Edit, Trash2, Mail, Shield, UserPlus, Building2, Search, MoreHorizontal, Key
+  Edit, Trash2, Mail, Shield, UserPlus, Building2, Search, MoreHorizontal, Key
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -22,12 +23,14 @@ import { Switch } from '@/components/ui/switch'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { MOCK_USERS, MOCK_DEPARTMENTS, MOCK_INVITATIONS } from '@/constants/users-inventory-data'
 import { APP_BASE } from '@/constants/navigation'
 import { getInitials, formatDateTime } from '@/lib/utils'
 import { PermissionGuard } from '@/guards/PermissionGuard'
+import { usersApi } from '@/api/phase1.api'
+import { invitesApi } from '@/api/phase2.api'
 
-type User = typeof MOCK_USERS[0]
+type User = { id: string; name: string; email: string; phone?: string; role: string; department?: string; status: string; lastLogin?: string; permissions: number; avatar?: string | null }
+type Invite = { id: string; email?: string; expiresAt?: string; user?: { email?: string; firstName?: string; lastName?: string }; createdAt?: string }
 
 const TAB_ROUTES: Record<string, string> = {
   all: `${APP_BASE}/users`,
@@ -39,10 +42,26 @@ const TAB_ROUTES: Record<string, string> = {
 export default function UsersManagementPage() {
   const location = useLocation()
   const navigate = useNavigate()
-  const [users, setUsers] = useState(MOCK_USERS)
+  const queryClient = useQueryClient()
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: async () => (await usersApi.list() as Array<Record<string, unknown>>).map((user): User => ({
+      id: String(user.id), name: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim(), email: String(user.email ?? ''),
+      phone: String(user.phone ?? ''), role: String(user.userType ?? 'STAFF'), department: String(user.department ?? ''),
+      status: String(user.status ?? 'ACTIVE').toLowerCase(), lastLogin: user.lastLoginAt ? String(user.lastLoginAt) : undefined, permissions: 0,
+    })),
+  })
+  const { data: apiDepartments = [] } = useQuery({ queryKey: ['users', 'departments'], queryFn: invitesApi.listDepartments })
+  const { data: invites = [] } = useQuery({ queryKey: ['users', 'invites'], queryFn: invitesApi.list })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [form, setForm] = useState({ name: '', email: '', phone: '', role: 'Waiter', department: 'Service' })
+  const [inviteForm, setInviteForm] = useState({ email: '', firstName: '', lastName: '', role: 'Waiter', department: '' })
+  const departments = useMemo(() => {
+    const fromApi = (apiDepartments as string[]).filter(Boolean)
+    if (fromApi.length) return fromApi
+    return [...new Set(users.map((user) => user.department).filter(Boolean))] as string[]
+  }, [apiDepartments, users])
 
   const activeTab = Object.entries(TAB_ROUTES).find(([, path]) => path === location.pathname)?.[0] ?? 'all'
 
@@ -89,8 +108,7 @@ export default function UsersManagementPage() {
             <DropdownMenuItem><Key className="h-3.5 w-3.5 mr-2" /> Reset Password</DropdownMenuItem>
             <DropdownMenuItem><Shield className="h-3.5 w-3.5 mr-2" /> Manage Roles</DropdownMenuItem>
             <DropdownMenuItem className="text-danger" onClick={() => {
-              setUsers((u) => u.filter((x) => x.id !== row.original.id))
-              toast.success('User removed')
+              usersApi.delete(row.original.id).then(() => { queryClient.invalidateQueries({ queryKey: ['users'] }); toast.success('User removed') }).catch((error: Error) => toast.error(error.message || 'Failed to remove user'))
             }}>
               <Trash2 className="h-3.5 w-3.5 mr-2" /> Deactivate
             </DropdownMenuItem>
@@ -98,18 +116,48 @@ export default function UsersManagementPage() {
         </DropdownMenu>
       )
     }
-  ], [])
+  ], [queryClient])
 
-  const handleAddUser = () => {
-    setUsers((u) => [...u, {
-      id: String(Date.now()), name: form.name, email: form.email, phone: form.phone,
-      role: form.role, department: form.department, status: 'active' as const,
-      lastLogin: new Date().toISOString(), permissions: 6, avatar: null
-    }])
-    toast.success('User added successfully')
-    setDialogOpen(false)
-    setForm({ name: '', email: '', phone: '', role: 'Waiter', department: 'Service' })
-  }
+  const createUser = useMutation({
+    mutationFn: () => {
+      const [firstName, ...last] = form.name.trim().split(/\s+/)
+      return usersApi.create({ firstName, lastName: last.join(' ') || firstName, email: form.email, password: 'ChangeMe123!', userType: form.role.toUpperCase(), department: form.department })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+      queryClient.invalidateQueries({ queryKey: ['users', 'departments'] })
+      toast.success('User added successfully')
+      setDialogOpen(false)
+      setForm({ name: '', email: '', phone: '', role: 'Waiter', department: 'Service' })
+    },
+    onError: (error: Error) => toast.error(error.message || 'Failed to add user'),
+  })
+
+  const createInvite = useMutation({
+    mutationFn: () => invitesApi.create({
+      email: inviteForm.email,
+      firstName: inviteForm.firstName || inviteForm.email.split('@')[0],
+      lastName: inviteForm.lastName || 'User',
+      userType: inviteForm.role.toUpperCase(),
+      department: inviteForm.department || undefined,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users', 'invites'] })
+      toast.success('Invitation created')
+      setInviteOpen(false)
+      setInviteForm({ email: '', firstName: '', lastName: '', role: 'Waiter', department: '' })
+    },
+    onError: (error: Error) => toast.error(error.message || 'Failed to create invitation'),
+  })
+
+  const revokeInvite = useMutation({
+    mutationFn: (id: string) => invitesApi.revoke(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users', 'invites'] })
+      toast.success('Invitation revoked')
+    },
+    onError: (error: Error) => toast.error(error.message || 'Failed to revoke invitation'),
+  })
 
   return (
     <PageShell>
@@ -134,8 +182,8 @@ export default function UsersManagementPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <StatCard title="Total Users" value={users.length} format="number" icon={<Shield className="h-5 w-5" />} />
           <StatCard title="Active" value={users.filter((u) => u.status === 'active').length} format="number" icon={<Shield className="h-5 w-5" />} />
-          <StatCard title="Departments" value={MOCK_DEPARTMENTS.length} format="number" icon={<Building2 className="h-5 w-5" />} />
-          <StatCard title="Pending Invites" value={MOCK_INVITATIONS.filter((i) => i.status === 'pending').length} format="number" icon={<Mail className="h-5 w-5" />} />
+          <StatCard title="Departments" value={departments.length} format="number" icon={<Building2 className="h-5 w-5" />} />
+          <StatCard title="Pending Invites" value={(invites as Invite[]).length} format="number" icon={<Mail className="h-5 w-5" />} />
         </div>
 
         <Tabs value={activeTab} onValueChange={(v) => navigate(TAB_ROUTES[v])}>
@@ -160,7 +208,7 @@ export default function UsersManagementPage() {
                 <Card key={role} className="hover:shadow-elevated transition-all cursor-pointer">
                   <CardContent className="p-4 text-center">
                     <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary mx-auto mb-2 flex items-center justify-center font-bold text-sm">
-                      {users.filter((u) => u.role === role).length}
+                      {users.filter((u) => u.role.toUpperCase() === role.toUpperCase()).length}
                     </div>
                     <p className="font-medium text-sm">{role}</p>
                     <Button variant="link" size="sm" className="text-xs mt-1" onClick={() => navigate(`${APP_BASE}/roles`)}>Manage →</Button>
@@ -178,7 +226,7 @@ export default function UsersManagementPage() {
                       <div className="flex gap-4">
                         {['Owner', 'Manager', 'Cashier'].map((r) => (
                           <div key={r} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <Switch defaultChecked={r === 'Owner' || (r === 'Manager' && perm !== 'Settings')} />
+                            <Switch defaultChecked={r === 'Owner' || (r === 'Manager' && perm !== 'Settings')} disabled />
                             {r}
                           </div>
                         ))}
@@ -192,19 +240,18 @@ export default function UsersManagementPage() {
 
           <TabsContent value="departments" className="mt-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {MOCK_DEPARTMENTS.map((dept) => (
-                <Card key={dept.id} className="hover:shadow-elevated transition-all">
+              {departments.length === 0 && (
+                <Card><CardContent className="p-6 text-sm text-muted-foreground">No departments found yet. Assign a department when creating users.</CardContent></Card>
+              )}
+              {departments.map((department) => (
+                <Card key={department} className="hover:shadow-elevated transition-all">
                   <CardContent className="p-5">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className={`h-10 w-10 rounded-xl ${dept.color} flex items-center justify-center text-white font-bold`}>{dept.staff}</div>
+                      <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center text-white font-bold">{users.filter((user) => user.department === department).length}</div>
                       <div>
-                        <p className="font-semibold">{dept.name}</p>
-                        <p className="text-xs text-muted-foreground">Head: {dept.head}</p>
+                        <p className="font-semibold">{department}</p>
+                        <p className="text-xs text-muted-foreground">{users.filter((user) => user.department === department).length} staff members</p>
                       </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="flex-1">View Staff</Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8"><Edit className="h-3.5 w-3.5" /></Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -213,29 +260,36 @@ export default function UsersManagementPage() {
           </TabsContent>
 
           <TabsContent value="invites" className="mt-4 space-y-3">
-            {MOCK_INVITATIONS.map((inv) => (
-              <Card key={inv.id}>
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center"><Mail className="h-5 w-5 text-muted-foreground" /></div>
-                    <div>
-                      <p className="font-medium">{inv.email}</p>
-                      <p className="text-xs text-muted-foreground">{inv.role} · {inv.department} · Sent {inv.sentAt}</p>
+            {(invites as Invite[]).length === 0 && (
+              <Card><CardContent className="p-6 text-sm text-muted-foreground">No pending invitations.</CardContent></Card>
+            )}
+            {(invites as Invite[]).map((invite) => {
+              const email = invite.email ?? invite.user?.email ?? 'Unknown'
+              const name = `${invite.user?.firstName ?? ''} ${invite.user?.lastName ?? ''}`.trim()
+              return (
+                <Card key={invite.id}>
+                  <CardContent className="p-4 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center"><Mail className="h-5 w-5 text-muted-foreground" /></div>
+                      <div>
+                        <p className="font-medium">{email}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {name || 'Invited user'}
+                          {invite.expiresAt ? ` · Expires ${new Date(invite.expiresAt).toLocaleDateString()}` : ''}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={inv.status === 'pending' ? 'warning' : 'success'}>{inv.status}</Badge>
-                    {inv.status === 'pending' && (
-                      <Button variant="outline" size="sm" onClick={() => toast.success('Invitation resent')}>Resend</Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                    <div className="flex items-center gap-2">
+                      <Badge variant="warning">pending</Badge>
+                      <Button variant="outline" size="sm" onClick={() => revokeInvite.mutate(invite.id)} disabled={revokeInvite.isPending}>Revoke</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
           </TabsContent>
         </Tabs>
 
-        {/* Add User Dialog */}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader><DialogTitle>Add New User</DialogTitle></DialogHeader>
@@ -257,41 +311,51 @@ export default function UsersManagementPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Department</Label>
-                  <Select value={form.department} onValueChange={(v) => setForm({ ...form, department: v })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {MOCK_DEPARTMENTS.map((d) => <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <Input list="department-options" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+                  <datalist id="department-options">
+                    {departments.map((department) => <option key={department} value={department} />)}
+                  </datalist>
                 </div>
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleAddUser}>Add User</Button>
+              <Button disabled={!form.name || !form.email || createUser.isPending} onClick={() => createUser.mutate()}>Add User</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        {/* Invite Dialog */}
         <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader><DialogTitle>Invite User by Email</DialogTitle></DialogHeader>
             <div className="space-y-4 py-2">
-              <div className="space-y-2"><Label>Email Address</Label><Input type="email" placeholder="user@example.com" /></div>
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <Select defaultValue="Waiter">
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {['Manager', 'Cashier', 'Waiter', 'Chef'].map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-2"><Label>Email Address</Label><Input type="email" value={inviteForm.email} onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })} placeholder="user@example.com" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2"><Label>First Name</Label><Input value={inviteForm.firstName} onChange={(e) => setInviteForm({ ...inviteForm, firstName: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Last Name</Label><Input value={inviteForm.lastName} onChange={(e) => setInviteForm({ ...inviteForm, lastName: e.target.value })} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <Select value={inviteForm.role} onValueChange={(role) => setInviteForm({ ...inviteForm, role })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {['Manager', 'Cashier', 'Waiter', 'Chef'].map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Department</Label>
+                  <Input list="invite-department-options" value={inviteForm.department} onChange={(e) => setInviteForm({ ...inviteForm, department: e.target.value })} />
+                  <datalist id="invite-department-options">
+                    {departments.map((department) => <option key={department} value={department} />)}
+                  </datalist>
+                </div>
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setInviteOpen(false)}>Cancel</Button>
-              <Button onClick={() => { toast.success('Invitation sent'); setInviteOpen(false) }}>Send Invite</Button>
+              <Button disabled={!inviteForm.email || createInvite.isPending} onClick={() => createInvite.mutate()}>Send Invite</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ColumnDef } from '@tanstack/react-table'
 import {
   Plus, Download, Package, AlertTriangle, Warehouse, ArrowRightLeft,
-  BarChart3, QrCode, Edit, ClipboardList, Search
+  BarChart3, QrCode, ClipboardList, Search
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -88,6 +88,10 @@ export default function InventoryPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [addOpen, setAddOpen] = useState(false)
+  const [transferOpen, setTransferOpen] = useState(false)
+  const [adjustOpen, setAdjustOpen] = useState(false)
+  const [adjustForm, setAdjustForm] = useState({ id: '', name: '', quantity: 0, notes: '' })
+  const [transferForm, setTransferForm] = useState({ inventoryItemId: '', fromWarehouseId: '', toWarehouseId: '', quantity: 1, notes: '' })
   const [form, setForm] = useState({
     name: '',
     sku: '',
@@ -95,11 +99,12 @@ export default function InventoryPage() {
     minStock: 10,
     warehouseId: '',
     costPerUnit: 0,
+    itemType: 'RAW',
   })
 
   const { data: items = [], isLoading } = useQuery({
-    queryKey: ['inventory', 'items'],
-    queryFn: () => inventoryApi.listItems() as Promise<InventoryItemDto[]>,
+    queryKey: ['inventory', 'items', location.pathname],
+    queryFn: () => inventoryApi.listItems(false, location.pathname.endsWith('/materials') ? 'RAW' : location.pathname.endsWith('/goods') ? 'FINISHED' : undefined) as Promise<InventoryItemDto[]>,
   })
 
   const { data: warehouses = [] } = useQuery({
@@ -121,15 +126,40 @@ export default function InventoryPage() {
         minStock: form.minStock,
         warehouseId: form.warehouseId,
         costPerUnit: form.costPerUnit,
+        itemType: form.itemType,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] })
       toast.success('Inventory item added')
       setAddOpen(false)
-      setForm({ name: '', sku: '', unit: 'kg', minStock: 10, warehouseId: '', costPerUnit: 0 })
+      setForm({ name: '', sku: '', unit: 'kg', minStock: 10, warehouseId: '', costPerUnit: 0, itemType: 'RAW' })
     },
     onError: () => toast.error('Failed to add item'),
   })
+  const transferItem = useMutation({
+    mutationFn: inventoryApi.transfer,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['inventory'] }); toast.success('Stock transferred') },
+    onError: (error: Error) => toast.error(error.message || 'Failed to transfer stock'),
+  })
+  const adjustStock = useMutation({
+    mutationFn: () => inventoryApi.adjustStock(adjustForm.id, adjustForm.quantity, adjustForm.notes || undefined),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      toast.success('Stock adjusted')
+      setAdjustOpen(false)
+    },
+    onError: (error: Error) => toast.error(error.message || 'Failed to adjust stock'),
+  })
+  const exportInventory = async () => {
+    try {
+      const report = await inventoryApi.export()
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(new Blob([report.content], { type: 'text/csv' }))
+      link.download = report.filename || 'inventory.csv'
+      link.click()
+      URL.revokeObjectURL(link.href)
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Failed to export inventory') }
+  }
 
   const activeTab = ROUTE_TAB[location.pathname] ?? 'dashboard'
   const lowStock = items.filter((i) => stockStatus(i) !== 'ok')
@@ -188,9 +218,17 @@ export default function InventoryPage() {
     {
       id: 'actions',
       header: '',
-      cell: () => (
-        <Button variant="ghost" size="icon" className="h-7 w-7">
-          <Edit className="h-3.5 w-3.5" />
+      cell: ({ row }) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7"
+          onClick={() => {
+            setAdjustForm({ id: row.original.id, name: row.original.name, quantity: row.original.quantity, notes: '' })
+            setAdjustOpen(true)
+          }}
+        >
+          Adjust
         </Button>
       ),
     },
@@ -217,7 +255,7 @@ export default function InventoryPage() {
           description="Stock levels, warehouses, transfers, consumption & alerts"
           actions={
             <>
-              <Button variant="outline"><Download className="h-4 w-4 mr-2" /> Export</Button>
+              <Button variant="outline" onClick={exportInventory}><Download className="h-4 w-4 mr-2" /> Export</Button>
               <Button variant="outline"><QrCode className="h-4 w-4 mr-2" /> Scan Barcode</Button>
               <Button onClick={() => setAddOpen(true)}><Plus className="h-4 w-4 mr-2" /> Add Item</Button>
             </>
@@ -236,6 +274,8 @@ export default function InventoryPage() {
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="items">All Items</TabsTrigger>
             <TabsTrigger value="warehouse">Warehouse</TabsTrigger>
+            <TabsTrigger value="materials">Raw Materials</TabsTrigger>
+            <TabsTrigger value="goods">Finished Goods</TabsTrigger>
             <TabsTrigger value="transfer">Stock Transfer</TabsTrigger>
             <TabsTrigger value="purchase">Purchase</TabsTrigger>
             <TabsTrigger value="logs">Logs</TabsTrigger>
@@ -311,6 +351,8 @@ export default function InventoryPage() {
           </TabsContent>
 
           <TabsContent value="items" className="mt-4"><ItemsTable data={items} /></TabsContent>
+          <TabsContent value="materials" className="mt-4"><ItemsTable data={items} /></TabsContent>
+          <TabsContent value="goods" className="mt-4"><ItemsTable data={items} /></TabsContent>
 
           <TabsContent value="warehouse" className="mt-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -341,7 +383,8 @@ export default function InventoryPage() {
               <CardContent className="p-8 text-center text-muted-foreground">
                 <ArrowRightLeft className="h-12 w-12 mx-auto mb-3 opacity-40" />
                 <p className="font-medium text-foreground">Stock transfers</p>
-                <p className="text-sm mt-1">Transfer API coming soon — use adjust stock for now.</p>
+                <p className="text-sm mt-1">Move stock between warehouses with an auditable transfer.</p>
+                <Button className="mt-4" onClick={() => setTransferOpen(true)} disabled={transferItem.isPending}>Create transfer</Button>
               </CardContent>
             </Card>
           </TabsContent>
@@ -423,6 +466,13 @@ export default function InventoryPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label>Item Type</Label>
+                <Select value={form.itemType} onValueChange={(itemType) => setForm({ ...form, itemType })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="RAW">Raw material</SelectItem><SelectItem value="FINISHED">Finished good</SelectItem></SelectContent>
+                </Select>
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
@@ -432,6 +482,31 @@ export default function InventoryPage() {
               >
                 Add Item
               </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Transfer Stock</DialogTitle></DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1"><Label>Item</Label><Select value={transferForm.inventoryItemId} onValueChange={(inventoryItemId) => setTransferForm({ ...transferForm, inventoryItemId })}><SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger><SelectContent>{items.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} ({item.quantity} {item.unit})</SelectItem>)}</SelectContent></Select></div>
+              <div className="grid grid-cols-2 gap-3"><div className="space-y-1"><Label>From warehouse</Label><Select value={transferForm.fromWarehouseId} onValueChange={(fromWarehouseId) => setTransferForm({ ...transferForm, fromWarehouseId })}><SelectTrigger><SelectValue placeholder="Source" /></SelectTrigger><SelectContent>{warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>To warehouse</Label><Select value={transferForm.toWarehouseId} onValueChange={(toWarehouseId) => setTransferForm({ ...transferForm, toWarehouseId })}><SelectTrigger><SelectValue placeholder="Destination" /></SelectTrigger><SelectContent>{warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}</SelectContent></Select></div></div>
+              <div className="space-y-1"><Label>Quantity</Label><Input type="number" min="0.01" value={transferForm.quantity} onChange={(e) => setTransferForm({ ...transferForm, quantity: Number(e.target.value) })} /></div>
+              <div className="space-y-1"><Label>Notes</Label><Input value={transferForm.notes} onChange={(e) => setTransferForm({ ...transferForm, notes: e.target.value })} /></div>
+            </div>
+            <DialogFooter><Button variant="outline" onClick={() => setTransferOpen(false)}>Cancel</Button><Button disabled={!transferForm.inventoryItemId || !transferForm.fromWarehouseId || !transferForm.toWarehouseId || transferForm.fromWarehouseId === transferForm.toWarehouseId || transferItem.isPending} onClick={() => transferItem.mutate(transferForm, { onSuccess: () => setTransferOpen(false) })}>Transfer</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Adjust Stock · {adjustForm.name}</DialogTitle></DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1"><Label>New quantity</Label><Input type="number" value={adjustForm.quantity} onChange={(e) => setAdjustForm({ ...adjustForm, quantity: Number(e.target.value) })} /></div>
+              <div className="space-y-1"><Label>Notes</Label><Input value={adjustForm.notes} onChange={(e) => setAdjustForm({ ...adjustForm, notes: e.target.value })} /></div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAdjustOpen(false)}>Cancel</Button>
+              <Button disabled={!adjustForm.id || !Number.isFinite(adjustForm.quantity) || adjustStock.isPending} onClick={() => adjustStock.mutate()}>Save adjustment</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

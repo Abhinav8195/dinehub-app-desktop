@@ -11,28 +11,38 @@ export { customersApi } from './customers.api'
 export { ordersApi } from './orders.api'
 export { settingsApi } from './settings.api'
 export { tablesApi } from './tables.api'
+export {
+  branchesApi,
+  employeesApi,
+  usersApi,
+  rolesApi,
+  reservationsApi,
+  vendorsApi,
+  purchasesApi,
+  modifiersApi,
+  combosApi,
+  qrApi,
+  filesApi,
+  expensesApi,
+  offersApi,
+  loyaltyApi,
+  printersApi,
+  campaignsApi,
+} from './phase1.api'
+export {
+  invitesApi,
+  accountingApi,
+  analyticsApi,
+  syncApi,
+  billingApi,
+} from './phase2.api'
 
 const notImplemented = (module: string) => () => {
   throw new Error(`${module} API not yet implemented`)
 }
 
-export const branchesApi = { list: notImplemented('branches'), get: notImplemented('branches') }
-export const usersApi = { list: notImplemented('users'), get: notImplemented('users') }
-export const employeesApi = { list: notImplemented('employees') }
-export const vendorsApi = { list: notImplemented('vendors') }
-export const modifiersApi = { list: notImplemented('modifiers') }
 export const posApi = { list: notImplemented('pos') }
 export const kitchenApi = { list: notImplemented('kitchen') }
 export const recipesApi = { list: notImplemented('recipes') }
-export const purchasesApi = { list: notImplemented('purchases') }
-export const billingApi = { list: notImplemented('billing') }
-export const offersApi = { list: notImplemented('offers') }
-export const loyaltyApi = { list: notImplemented('loyalty') }
-export const expensesApi = { list: notImplemented('expenses') }
-export const accountingApi = { list: notImplemented('accounting') }
-export const crmApi = { list: notImplemented('crm') }
-export const printersApi = { list: notImplemented('printers') }
 export const paymentsApi = { list: notImplemented('payments') }
-export const filesApi = { upload: notImplemented('files') }
 export const auditLogsApi = { list: notImplemented('audit-logs') }
-export const analyticsApi = { get: notImplemented('analytics') }

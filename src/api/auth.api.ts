@@ -10,7 +10,6 @@ import type {
   OpenShiftRequest, CloseShiftRequest, StaffShift
 } from './types/auth.types'
 import {
-  decodeJwtSessionId,
   mapLoginResponse,
   mapRefreshResponse,
   mapRole,
@@ -69,12 +68,8 @@ export const authApi = {
     unwrap(apiClient.post<ApiResponse<null>>('/auth/change-password', body)),
 
   getSessions: async () => {
-    const [raw, token] = await Promise.all([
-      unwrap(apiClient.get<ApiResponse<AuthSession[]>>('/auth/sessions')),
-      tokenBridge.getAccessToken()
-    ])
-    const currentSessionId = decodeJwtSessionId(token)
-    return (raw as never[]).map((session) => mapSession(session, currentSessionId))
+    const raw = await unwrap(apiClient.get<ApiResponse<AuthSession[]>>('/auth/sessions'))
+    return (raw as never[]).map((session) => mapSession(session, null))
   },
 
   revokeSession: (sessionId: string) =>

@@ -7,7 +7,6 @@ import { Toaster } from 'sonner'
 import { store } from '@/store'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AuthProvider } from '@/providers/AuthProvider'
-import { OfflineBanner } from '@/components/common/OfflineBanner'
 import App from './App'
 import './index.css'
 
@@ -49,7 +48,6 @@ createRoot(document.getElementById('root')!).render(
           <AuthProvider>
             <ThemeInitializer>
               <AppBootstrap>
-                <OfflineBanner />
                 <App />
                 <Toaster position="top-right" richColors closeButton />
               </AppBootstrap>

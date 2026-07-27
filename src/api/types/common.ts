@@ -18,7 +18,7 @@ export interface ApiErrorBody {
   success: false
   statusCode: number
   message: string
-  errors?: string[]
+  errors?: string[] | Record<string, string[]>
   path?: string
   timestamp?: string
 }
@@ -33,7 +33,7 @@ export interface PaginationParams {
 
 export class ApiError extends Error {
   statusCode: number
-  errors?: string[]
+  errors?: string[] | Record<string, string[]>
   path?: string
 
   constructor(body: ApiErrorBody) {

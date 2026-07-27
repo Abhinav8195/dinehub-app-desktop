@@ -1,49 +1,68 @@
-import { io, type Socket } from 'socket.io-client'
-import { tokenBridge } from '@/api/client'
+type Handler = (payload: never) => void
+interface RealtimeFacade {
+  on: (event: string, handler: Handler) => void
+  off: (event: string, handler?: Handler) => void
+}
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000'
+let connectionState: 'disconnected' | 'connecting' | 'connected' = 'disconnected'
+const stateListeners = new Set<(state: typeof connectionState) => void>()
+const eventListeners = new Map<string, Set<Handler>>()
+let unsubscribeEvent: (() => void) | null = null
+let unsubscribeState: (() => void) | null = null
 
-let socket: Socket | null = null
+const facade: RealtimeFacade = {
+  on(event, handler) {
+    const handlers = eventListeners.get(event) ?? new Set()
+    handlers.add(handler)
+    eventListeners.set(event, handlers)
+  },
+  off(event, handler) {
+    if (!handler) eventListeners.delete(event)
+    else eventListeners.get(event)?.delete(handler)
+  }
+}
 
-export type SocketEvent =
-  | 'new_order'
-  | 'order_updated'
-  | 'new_kitchen_order'
-  | 'kitchen_order_updated'
-  | 'table_updated'
-  | 'waiter_call_alert'
+function setConnectionState(next: typeof connectionState) {
+  connectionState = next
+  stateListeners.forEach((listener) => listener(next))
+}
 
-export async function connectSocket(tenantId: string): Promise<Socket> {
-  if (socket?.connected) return socket
+export function getSocketConnectionState() {
+  return connectionState
+}
 
-  const token = await tokenBridge.getAccessToken()
+export function onSocketConnectionState(listener: (state: typeof connectionState) => void) {
+  stateListeners.add(listener)
+  listener(connectionState)
+  return () => { stateListeners.delete(listener) }
+}
 
-  socket = io(SOCKET_URL, {
-    auth: { token },
-    transports: ['websocket'],
-    autoConnect: true,
-    reconnection: true,
-    reconnectionAttempts: 10,
-    reconnectionDelay: 2000
+export async function connectSocket(_tenantId?: string): Promise<RealtimeFacade> {
+  if (connectionState === 'connected') return facade
+  setConnectionState('connecting')
+  unsubscribeEvent ??= window.electronAPI.realtime.onEvent((event, payload) => {
+    eventListeners.get(event)?.forEach((handler) => handler(payload as never))
   })
-
-  socket.on('connect', () => {
-    socket?.emit('join_tenant', tenantId)
-  })
-
-  return socket
+  unsubscribeState ??= window.electronAPI.realtime.onState(setConnectionState)
+  await window.electronAPI.realtime.connect()
+  return facade
 }
 
 export function disconnectSocket(): void {
-  socket?.disconnect()
-  socket = null
+  window.electronAPI.realtime.disconnect().catch(() => {})
+  unsubscribeEvent?.()
+  unsubscribeState?.()
+  unsubscribeEvent = null
+  unsubscribeState = null
+  eventListeners.clear()
+  setConnectionState('disconnected')
 }
 
-export function getSocket(): Socket | null {
-  return socket
+export function getSocket(): RealtimeFacade | null {
+  return connectionState === 'disconnected' ? null : facade
 }
 
-export function onSocketEvent<T = unknown>(event: SocketEvent, handler: (data: T) => void) {
-  socket?.on(event, handler)
-  return () => { socket?.off(event, handler) }
+export function onSocketEvent<T = unknown>(event: string, handler: (data: T) => void) {
+  facade.on(event, handler as Handler)
+  return () => facade.off(event, handler as Handler)
 }

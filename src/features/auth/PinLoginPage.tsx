@@ -47,7 +47,6 @@ export default function PinLoginPage() {
         deviceType: 'pos',
         deviceId
       })
-      await tokenBridge.setTokens(result.tokens.accessToken, result.tokens.refreshToken)
       setUser(result.user)
       useAuthStore.setState({ isAuthenticated: true })
       useTenantStore.setState({ slug: tenantSlug.trim() })

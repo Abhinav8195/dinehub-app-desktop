@@ -2,7 +2,9 @@ import { useEffect } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { useTenantStore } from '@/store/tenantStore'
 import { connectSocket, disconnectSocket } from '@/lib/socket'
+import { flushOfflineQueue } from '@/lib/offline'
 import { tokenBridge } from '@/api/client'
+import { toast } from 'sonner'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const initialize = useAuthStore((s) => s.initialize)
@@ -18,13 +20,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const slug = await tokenBridge.getTenantSlug()
       if (!slug) return
       useTenantStore.setState({ slug })
-      try {
-        await useTenantStore.getState().resolveBranding(slug)
-      } catch {
-        // branding is optional on restore
-      }
     }
-    initTenant()
+    void initTenant()
   }, [])
 
   useEffect(() => {
@@ -35,6 +32,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     return () => disconnectSocket()
   }, [isAuthenticated, user?.tenantId])
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const flush = async () => {
+      try {
+        const count = await flushOfflineQueue()
+        if (count > 0) toast.success(`Synced ${count} offline order${count === 1 ? '' : 's'}`)
+      } catch (error) {
+        console.error(error)
+      }
+    }
+    flush()
+    window.addEventListener('online', flush)
+    return () => window.removeEventListener('online', flush)
+  }, [isAuthenticated])
 
   return <>{children}</>
 }

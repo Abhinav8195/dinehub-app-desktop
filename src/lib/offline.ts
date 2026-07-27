@@ -1,7 +1,8 @@
 /**
- * Offline mode infrastructure — IndexedDB cache + sync queue
- * Full implementation in future modules when menu/orders APIs are wired.
+ * Offline mode — IndexedDB cache + sync queue flushed via /sync/push.
  */
+
+import { syncApi, type SyncMutation } from '@/api/phase2.api'
 
 const DB_NAME = 'dinehub-offline'
 const DB_VERSION = 1
@@ -11,6 +12,8 @@ export interface SyncQueueItem {
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   url: string
   body?: unknown
+  resource?: SyncMutation['resource']
+  operation?: SyncMutation['operation']
   createdAt: string
   retries: number
 }
@@ -53,32 +56,75 @@ export async function enqueueSync(item: Omit<SyncQueueItem, 'id' | 'createdAt' |
     ...item,
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
-    retries: 0
+    retries: 0,
   }
   const tx = db.transaction('syncQueue', 'readwrite')
   tx.objectStore('syncQueue').add(entry)
 }
 
-export async function processSyncQueue(
-  executor: (item: SyncQueueItem) => Promise<void>
-): Promise<number> {
+export async function listSyncQueue(): Promise<SyncQueueItem[]> {
   const db = await openDB()
-  const items: SyncQueueItem[] = await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const req = db.transaction('syncQueue', 'readonly').objectStore('syncQueue').getAll()
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
   })
+}
 
-  let processed = 0
-  for (const item of items) {
-    try {
-      await executor(item)
-      const tx = db.transaction('syncQueue', 'readwrite')
-      tx.objectStore('syncQueue').delete(item.id)
-      processed++
-    } catch {
-      // keep in queue for next sync attempt
+function toMutation(item: SyncQueueItem): SyncMutation | null {
+  if (item.resource && item.operation && item.body && typeof item.body === 'object') {
+    return {
+      resource: item.resource,
+      operation: item.operation,
+      key: item.id,
+      payload: item.body as Record<string, unknown>,
     }
   }
-  return processed
+  if (item.url === '/orders' && item.method === 'POST' && item.body && typeof item.body === 'object') {
+    return {
+      resource: 'orders',
+      operation: 'create',
+      key: item.id,
+      payload: item.body as Record<string, unknown>,
+    }
+  }
+  return null
+}
+
+export async function processSyncQueue(
+  executor?: (item: SyncQueueItem) => Promise<void>,
+): Promise<number> {
+  const db = await openDB()
+  const items = await listSyncQueue()
+  if (!items.length) return 0
+
+  if (executor) {
+    let processed = 0
+    for (const item of items) {
+      try {
+        await executor(item)
+        const tx = db.transaction('syncQueue', 'readwrite')
+        tx.objectStore('syncQueue').delete(item.id)
+        processed++
+      } catch {
+        // keep in queue for next sync attempt
+      }
+    }
+    return processed
+  }
+
+  const mutations = items.map(toMutation).filter((entry): entry is SyncMutation => Boolean(entry))
+  if (!mutations.length) return 0
+
+  await syncApi.push(mutations)
+  const tx = db.transaction('syncQueue', 'readwrite')
+  for (const item of items) {
+    if (toMutation(item)) tx.objectStore('syncQueue').delete(item.id)
+  }
+  return mutations.length
+}
+
+export async function flushOfflineQueue(): Promise<number> {
+  if (!navigator.onLine) return 0
+  return processSyncQueue()
 }

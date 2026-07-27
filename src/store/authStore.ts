@@ -10,7 +10,7 @@ interface AuthState {
   isLoading: boolean
   isInitialized: boolean
   setUser: (user: AuthUser | null) => void
-  login: (email: string, password: string, tenantSlug?: string) => Promise<void>
+  login: (email: string, password: string, tenantSlug: string) => Promise<void>
   logout: (allDevices?: boolean) => Promise<void>
   fetchMe: () => Promise<AuthUser>
   initialize: () => Promise<void>
@@ -45,7 +45,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (email, password, tenantSlug) => {
     set({ isLoading: true })
     try {
-      if (tenantSlug) await tokenBridge.setTenantSlug(tenantSlug)
+      await tokenBridge.setTenantSlug(tenantSlug)
       const deviceId = await tokenBridge.getDeviceId()
       const appName = import.meta.env.VITE_APP_NAME || 'DineHub Desktop'
 
@@ -54,11 +54,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         password,
         tenantSlug,
         deviceName: `${appName} v1.0`,
-        deviceType: 'desktop',
+        deviceType: 'electron-desktop',
         deviceId
       })
 
-      await tokenBridge.setTokens(result.tokens.accessToken, result.tokens.refreshToken)
       set({ user: result.user, isAuthenticated: true })
     } finally {
       set({ isLoading: false })
@@ -84,8 +83,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   initialize: async () => {
     set({ isLoading: true })
     try {
-      const token = await tokenBridge.getAccessToken()
-      if (token) {
+      const hasSession = await tokenBridge.hasSession()
+      if (hasSession) {
         const user = await authApi.me()
         set({ user, isAuthenticated: true })
       }

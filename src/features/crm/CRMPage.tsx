@@ -1,4 +1,7 @@
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Mail, MessageSquare, Send } from 'lucide-react'
+import { toast } from 'sonner'
 import { PageHeader } from '@/components/common/PageHeader'
 import { PageShell } from '@/components/common/PageShell'
 import { Button } from '@/components/ui/button'
@@ -7,14 +10,27 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { campaignsApi } from '@/api/phase1.api'
 
-const CAMPAIGNS = [
-  { id: '1', name: 'Summer Special', channel: 'Email', sent: 1250, opened: 680, status: 'active' },
-  { id: '2', name: 'Weekend Brunch', channel: 'SMS', sent: 890, opened: 420, status: 'completed' },
-  { id: '3', name: 'Loyalty Rewards', channel: 'WhatsApp', sent: 2100, opened: 1580, status: 'active' }
-]
+type Campaign = { id: string; name: string; channel?: string; status?: string; audience?: { count?: number } }
 
 export default function CRMPage() {
+  const queryClient = useQueryClient()
+  const [name, setName] = useState('')
+  const [subject, setSubject] = useState('')
+  const [body, setBody] = useState('')
+  const [channel, setChannel] = useState('EMAIL')
+  const { data: campaigns = [] } = useQuery({ queryKey: ['campaigns'], queryFn: campaignsApi.list })
+  const createCampaign = useMutation({
+    mutationFn: () => campaignsApi.create({ name, subject, body, channel }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['campaigns'] }); setName(''); setSubject(''); setBody(''); toast.success('Campaign created') },
+    onError: (error: Error) => toast.error(error.message || 'Failed to create campaign'),
+  })
+  const sendCampaign = useMutation({
+    mutationFn: campaignsApi.send,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['campaigns'] }); toast.success('Campaign sent') },
+    onError: (error: Error) => toast.error(error.message || 'Failed to send campaign'),
+  })
   return (
     <PageShell>
       <div className="page-container">
@@ -30,7 +46,7 @@ export default function CRMPage() {
           </TabsList>
 
           <TabsContent value="campaigns" className="mt-4 space-y-4">
-            {CAMPAIGNS.map((c) => (
+            {(campaigns as Campaign[]).map((c) => (
               <Card key={c.id} className="hover:shadow-elevated transition-all">
                 <CardContent className="p-5 flex items-center justify-between">
                   <div className="flex items-center gap-4">
@@ -39,10 +55,13 @@ export default function CRMPage() {
                     </div>
                     <div>
                       <p className="font-semibold">{c.name}</p>
-                      <p className="text-sm text-muted-foreground">{c.channel} · Sent to {c.sent} · Opened {c.opened}</p>
+                      <p className="text-sm text-muted-foreground">{c.channel ?? 'Email'} · Sent to {c.audience?.count ?? 0}</p>
                     </div>
                   </div>
-                  <Badge variant={c.status === 'active' ? 'success' : 'secondary'}>{c.status}</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={c.status === 'SENT' ? 'success' : 'secondary'}>{c.status?.toLowerCase() ?? 'draft'}</Badge>
+                    {c.status !== 'SENT' && <Button size="sm" onClick={() => sendCampaign.mutate(c.id)}>Send</Button>}
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -52,14 +71,15 @@ export default function CRMPage() {
             <Card>
               <CardHeader><CardTitle className="text-base">Send Message</CardTitle></CardHeader>
               <CardContent className="space-y-4 max-w-xl">
-                <Input placeholder="Subject" />
+                <Input placeholder="Campaign name" value={name} onChange={(event) => setName(event.target.value)} />
+                <Input placeholder="Subject" value={subject} onChange={(event) => setSubject(event.target.value)} />
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm"><Mail className="h-3 w-3 mr-1" /> Email</Button>
-                  <Button variant="outline" size="sm"><MessageSquare className="h-3 w-3 mr-1" /> SMS</Button>
-                  <Button variant="outline" size="sm"><Send className="h-3 w-3 mr-1" /> WhatsApp</Button>
+                  <Button variant={channel === 'EMAIL' ? 'default' : 'outline'} size="sm" onClick={() => setChannel('EMAIL')}><Mail className="h-3 w-3 mr-1" /> Email</Button>
+                  <Button variant={channel === 'SMS' ? 'default' : 'outline'} size="sm" onClick={() => setChannel('SMS')}><MessageSquare className="h-3 w-3 mr-1" /> SMS</Button>
+                  <Button variant={channel === 'WHATSAPP' ? 'default' : 'outline'} size="sm" onClick={() => setChannel('WHATSAPP')}><Send className="h-3 w-3 mr-1" /> WhatsApp</Button>
                 </div>
-                <Textarea placeholder="Write your message..." rows={6} />
-                <Button><Send className="h-4 w-4 mr-2" /> Send Campaign</Button>
+                <Textarea placeholder="Write your message..." rows={6} value={body} onChange={(event) => setBody(event.target.value)} />
+                <Button disabled={!name || !body || createCampaign.isPending} onClick={() => createCampaign.mutate()}><Send className="h-4 w-4 mr-2" /> Create Campaign</Button>
               </CardContent>
             </Card>
           </TabsContent>

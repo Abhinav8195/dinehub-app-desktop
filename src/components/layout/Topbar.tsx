@@ -1,9 +1,12 @@
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
+import { useQuery } from '@tanstack/react-query'
 import {
   Bell, ChevronDown, Globe, Moon, Search, Sun, Wifi, WifiOff,
-  Printer, CircleDollarSign, Plus, Command, Lock, Clock
+  Printer, CircleDollarSign, Plus, Command, Lock, Clock, Radio
 } from 'lucide-react'
+import { getSocketConnectionState, onSocketConnectionState } from '@/lib/socket'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -14,12 +17,14 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { Breadcrumb } from '@/components/common/Breadcrumb'
-import { RESTAURANTS, BRANCHES, LANGUAGES } from '@/constants/navigation'
+import { LANGUAGES } from '@/constants/navigation'
 import { setRestaurant, setBranch, setLanguage, toggleDarkMode, setCommandPaletteOpen } from '@/store/slices/appSlice'
 import { useAuth } from '@/hooks/useAuth'
 import { useShiftStore } from '@/store/shiftStore'
 import { APP_BASE } from '@/constants/navigation'
 import { getInitials } from '@/lib/utils'
+import { branchesApi } from '@/api/phase1.api'
+import { tenantsApi } from '@/api/tenants.api'
 
 import type { RootState } from '@/store'
 
@@ -39,8 +44,20 @@ export function Topbar({ onCloseShift }: TopbarProps) {
   const lockScreen = useShiftStore((s) => s.lockScreen)
   const { unreadCount } = useSelector((s: RootState) => s.notifications)
 
-  const restaurant = RESTAURANTS.find((r) => r.id === selectedRestaurantId)
-  const branches = BRANCHES.filter((b) => b.restaurantId === selectedRestaurantId)
+  const isSuperAdmin = Boolean(user?.isSuperAdmin)
+  const { data: tenantsResult } = useQuery({
+    queryKey: ['tenants', 'selector'],
+    queryFn: () => tenantsApi.list({ limit: 100 }),
+    enabled: isSuperAdmin,
+  })
+  const { data: branches = [] } = useQuery({ queryKey: ['branches'], queryFn: branchesApi.list })
+  const restaurants = tenantsResult?.data ?? []
+  const [socketState, setSocketState] = useState(getSocketConnectionState())
+  useEffect(() => onSocketConnectionState(setSocketState), [])
+  useEffect(() => {
+    if (isSuperAdmin && !selectedRestaurantId && restaurants[0]) dispatch(setRestaurant(restaurants[0].id))
+    if (!selectedBranchId && branches[0]) dispatch(setBranch(String(branches[0].id)))
+  }, [branches, dispatch, isSuperAdmin, restaurants, selectedBranchId, selectedRestaurantId])
 
   return (
     <TooltipProvider>
@@ -62,6 +79,16 @@ export function Topbar({ onCloseShift }: TopbarProps) {
             </Tooltip>
             <Tooltip>
               <TooltipTrigger>
+                <div className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${socketState === 'connected' ? 'text-success' : socketState === 'connecting' ? 'text-warning' : 'text-muted-foreground'}`}>
+                  <Radio className="h-3.5 w-3.5" />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                {socketState === 'connected' ? 'Realtime connected' : socketState === 'connecting' ? 'Realtime connecting…' : 'Realtime disconnected'}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger>
                 <div className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${printerConnected ? 'text-success' : 'text-danger'}`}>
                   <Printer className="h-3.5 w-3.5" />
                 </div>
@@ -79,16 +106,22 @@ export function Topbar({ onCloseShift }: TopbarProps) {
           </div>
 
           {/* Restaurant selector */}
-          <Select value={selectedRestaurantId} onValueChange={(v) => dispatch(setRestaurant(v))}>
-            <SelectTrigger className="w-[160px] h-9 hidden md:flex">
-              <SelectValue placeholder="Restaurant" />
-            </SelectTrigger>
-            <SelectContent>
-              {RESTAURANTS.map((r) => (
-                <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {isSuperAdmin ? (
+            <Select value={selectedRestaurantId} onValueChange={(v) => dispatch(setRestaurant(v))}>
+              <SelectTrigger className="w-[160px] h-9 hidden md:flex">
+                <SelectValue placeholder="Restaurant" />
+              </SelectTrigger>
+              <SelectContent>
+                {restaurants.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Badge variant="secondary" className="hidden md:flex h-9 px-3">
+              {user?.tenantSlug ?? 'Current restaurant'}
+            </Badge>
+          )}
 
           {/* Branch selector */}
           <Select value={selectedBranchId} onValueChange={(v) => dispatch(setBranch(v))}>
@@ -96,7 +129,7 @@ export function Topbar({ onCloseShift }: TopbarProps) {
               <SelectValue placeholder="Branch" />
             </SelectTrigger>
             <SelectContent>
-              {branches.map((b) => (
+              {(branches as Array<{ id: string; name: string }>).map((b) => (
                 <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
               ))}
             </SelectContent>

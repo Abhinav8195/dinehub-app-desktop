@@ -41,8 +41,18 @@ export default function ReportsPage() {
 
   const topProducts = (data?.topProducts as { name: string; quantity: number; revenue: number }[]) ?? []
 
-  const exportPlaceholder = (format: string) => {
-    toast.info(`${format} export will be available in the next release`)
+  const exportReport = async (format: 'csv' | 'xlsx' | 'pdf') => {
+    try {
+      const result = await reportsApi.export(format)
+      const url = URL.createObjectURL(result.blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = result.filename
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to export report')
+    }
   }
 
   return (
@@ -53,10 +63,13 @@ export default function ReportsPage() {
           description="Sales, profit, tax, and channel analytics from live order data"
           actions={
             <>
-              <Button variant="outline" onClick={() => exportPlaceholder('PDF')}>
+              <Button variant="outline" onClick={() => exportReport('csv')}>
+                <Download className="h-4 w-4 mr-2" /> Export CSV
+              </Button>
+              <Button variant="outline" onClick={() => exportReport('pdf')}>
                 <FileText className="h-4 w-4 mr-2" /> Export PDF
               </Button>
-              <Button variant="outline" onClick={() => exportPlaceholder('Excel')}>
+              <Button variant="outline" onClick={() => exportReport('xlsx')}>
                 <Download className="h-4 w-4 mr-2" /> Export Excel
               </Button>
             </>

@@ -1,5 +1,6 @@
 import Store from 'electron-store'
 import { randomUUID } from 'crypto'
+import { safeStorage } from 'electron'
 
 interface TokenPair {
   accessToken: string
@@ -8,7 +9,6 @@ interface TokenPair {
 
 const secureStore = new Store({
   name: 'dinehub-secure',
-  encryptionKey: 'dinehub-desktop-v1-encryption-key',
   clearInvalidConfig: true
 })
 
@@ -20,16 +20,16 @@ const KEYS = {
 } as const
 
 export function getAccessToken(): string | null {
-  return (secureStore.get(KEYS.ACCESS_TOKEN) as string) ?? null
+  return readSecret(KEYS.ACCESS_TOKEN)
 }
 
 export function getRefreshToken(): string | null {
-  return (secureStore.get(KEYS.REFRESH_TOKEN) as string) ?? null
+  return readSecret(KEYS.REFRESH_TOKEN)
 }
 
 export function setTokens(tokens: TokenPair): void {
-  secureStore.set(KEYS.ACCESS_TOKEN, tokens.accessToken)
-  secureStore.set(KEYS.REFRESH_TOKEN, tokens.refreshToken)
+  writeSecret(KEYS.ACCESS_TOKEN, tokens.accessToken)
+  writeSecret(KEYS.REFRESH_TOKEN, tokens.refreshToken)
 }
 
 export function clearTokens(): void {
@@ -52,4 +52,24 @@ export function getDeviceId(): string {
     secureStore.set(KEYS.DEVICE_ID, deviceId)
   }
   return deviceId
+}
+
+function writeSecret(key: string, value: string): void {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('Secure credential storage is unavailable on this device')
+  }
+  secureStore.set(key, safeStorage.encryptString(value).toString('base64'))
+}
+
+function readSecret(key: string): string | null {
+  const encrypted = secureStore.get(key)
+  if (typeof encrypted !== 'string' || !encrypted) return null
+  try {
+    return safeStorage.decryptString(Buffer.from(encrypted, 'base64'))
+  } catch {
+    // Old releases stored tokens with an application-wide key. Do not expose or
+    // migrate those values; require a new login into OS-backed storage instead.
+    secureStore.delete(key)
+    return null
+  }
 }

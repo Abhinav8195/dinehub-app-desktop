@@ -23,6 +23,7 @@ import { formatCurrency } from '@/lib/utils'
 import { calculateTaxBreakdown } from '@/lib/tax'
 import { customersApi } from '@/api/customers.api'
 import { ordersApi } from '@/api/orders.api'
+import { enqueueSync } from '@/lib/offline'
 import type { TaxSettings, TableDto } from '@/api/types/pos.types'
 import type { OrderItem } from '@/types'
 
@@ -112,7 +113,7 @@ export function CheckoutModal({
 
     setSubmitting(true)
     try {
-      const order = await ordersApi.create({
+      const payload = {
         type: orderType === 'dine-in' ? 'DINE_IN' : orderType === 'takeaway' ? 'TAKEAWAY' : 'DELIVERY',
         items: cart.map((item) => ({
           menuItemId: item.id,
@@ -128,7 +129,22 @@ export function CheckoutModal({
         tableId: orderType === 'dine-in' ? tableId : undefined,
         voucherCode: appliedVoucher || undefined,
         paymentMethod,
-      })
+      }
+      if (!navigator.onLine) {
+        await enqueueSync({
+          method: 'POST',
+          url: '/orders',
+          resource: 'orders',
+          operation: 'create',
+          body: payload,
+        })
+        onSuccess(`OFFLINE-${Date.now()}`, breakdown.total, paymentMethod)
+        toast.success('Order queued for sync when connection returns')
+        onOpenChange(false)
+        resetForm()
+        return
+      }
+      const order = await ordersApi.create(payload)
 
       onSuccess(order.orderNumber, order.total, paymentMethod)
       onOpenChange(false)

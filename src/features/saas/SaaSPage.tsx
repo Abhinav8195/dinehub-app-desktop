@@ -1,94 +1,176 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Building2, Plus, CreditCard, Users, Crown } from 'lucide-react'
+import { toast } from 'sonner'
 import { PageHeader } from '@/components/common/PageHeader'
 import { PageShell } from '@/components/common/PageShell'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { RESTAURANTS } from '@/constants/navigation'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { tenantsApi } from '@/api/tenants.api'
+import { billingApi } from '@/api/phase2.api'
 import { formatCurrency } from '@/lib/utils'
-
-const PLANS = [
-  { name: 'Starter', price: 49, features: ['1 Branch', '5 Users', 'Basic POS'], current: false },
-  { name: 'Professional', price: 99, features: ['5 Branches', '25 Users', 'Full ERP', 'Analytics'], current: true },
-  { name: 'Enterprise', price: 249, features: ['Unlimited', 'Custom', 'API Access', 'Priority Support'], current: false }
-]
+import { useAuth } from '@/hooks/useAuth'
 
 export default function SaaSPage() {
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const isSuperAdmin = Boolean(user?.isSuperAdmin)
+  const { data: tenantsResult } = useQuery({
+    queryKey: ['tenants', 'saas'],
+    queryFn: () => tenantsApi.list({ limit: 100 }),
+    enabled: isSuperAdmin,
+  })
+  const { data: subscription } = useQuery({
+    queryKey: ['billing', 'subscription'],
+    queryFn: () => billingApi.subscription() as Promise<{
+      status?: string
+      amount?: number
+      currency?: string
+      plan?: { name?: string }
+      invoices?: Array<{ id: string; invoiceNumber: string; amount: number; status: string; dueDate: string }>
+    } | null>,
+  })
+  const { data: plans = [] } = useQuery({
+    queryKey: ['tenants', 'plans'],
+    queryFn: tenantsApi.getPlans,
+  })
+
+  const generateInvoice = useMutation({
+    mutationFn: () => billingApi.generateInvoice(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['billing', 'subscription'] })
+      toast.success('Invoice generated')
+    },
+    onError: (error: Error) => toast.error(error.message || 'Unable to generate invoice'),
+  })
+  const checkout = useMutation({
+    mutationFn: (provider: 'razorpay' | 'stripe') => billingApi.checkout(provider),
+    onError: (error: Error) => toast.error(error.message || 'Checkout provider unavailable'),
+    onSuccess: () => toast.success('Checkout started'),
+  })
+
+  const restaurants = tenantsResult?.data ?? []
+  const invoices = subscription?.invoices ?? []
+
   return (
     <PageShell>
       <div className="page-container">
         <PageHeader title="SaaS Administration" description="Manage restaurants, subscriptions, and billing" actions={
-          <Button><Plus className="h-4 w-4 mr-2" /> Add Restaurant</Button>
+          isSuperAdmin ? <Button><Plus className="h-4 w-4 mr-2" /> Add Restaurant</Button> : undefined
         } />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
             <CardContent className="p-5 flex items-center gap-4">
               <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center"><Building2 className="h-6 w-6 text-primary" /></div>
-              <div><p className="text-2xl font-bold">{RESTAURANTS.length}</p><p className="text-sm text-muted-foreground">Restaurants</p></div>
+              <div><p className="text-2xl font-bold">{isSuperAdmin ? restaurants.length : 1}</p><p className="text-sm text-muted-foreground">Restaurants</p></div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-5 flex items-center gap-4">
               <div className="h-12 w-12 rounded-xl bg-success/10 flex items-center justify-center"><Users className="h-6 w-6 text-success" /></div>
-              <div><p className="text-2xl font-bold">48</p><p className="text-sm text-muted-foreground">Active Users</p></div>
+              <div><p className="text-2xl font-bold">{subscription?.plan?.name ?? '—'}</p><p className="text-sm text-muted-foreground">Current plan</p></div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-5 flex items-center gap-4">
               <div className="h-12 w-12 rounded-xl bg-warning/10 flex items-center justify-center"><CreditCard className="h-6 w-6 text-warning" /></div>
-              <div><p className="text-2xl font-bold">{formatCurrency(297)}</p><p className="text-sm text-muted-foreground">Monthly Revenue</p></div>
+              <div><p className="text-2xl font-bold">{formatCurrency(Number(subscription?.amount ?? 0))}</p><p className="text-sm text-muted-foreground">Subscription amount</p></div>
             </CardContent>
           </Card>
         </div>
 
-        <Tabs defaultValue="restaurants">
+        <Tabs defaultValue="billing">
           <TabsList>
-            <TabsTrigger value="restaurants">Restaurants</TabsTrigger>
+            {isSuperAdmin && <TabsTrigger value="restaurants">Restaurants</TabsTrigger>}
             <TabsTrigger value="plans">Plans</TabsTrigger>
             <TabsTrigger value="billing">Billing</TabsTrigger>
           </TabsList>
-        </Tabs>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {RESTAURANTS.map((r) => (
-            <Card key={r.id} className="hover:shadow-elevated transition-all">
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center font-bold">{r.name[0]}</div>
-                    <div><p className="font-semibold">{r.name}</p><p className="text-xs text-muted-foreground">{r.branches} branches</p></div>
-                  </div>
-                  <Badge variant="success">Active</Badge>
-                </div>
-                <Progress value={75} className="h-1.5" />
-                <p className="text-xs text-muted-foreground mt-2">Professional Plan</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+          {isSuperAdmin && (
+            <TabsContent value="restaurants" className="mt-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {restaurants.map((r) => (
+                  <Card key={r.id} className="hover:shadow-elevated transition-all">
+                    <CardContent className="p-5">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center font-bold">{r.name[0]}</div>
+                          <div><p className="font-semibold">{r.name}</p><p className="text-xs text-muted-foreground">{r.slug}</p></div>
+                        </div>
+                        <Badge variant="success">{r.status}</Badge>
+                      </div>
+                      <Progress value={75} className="h-1.5" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </TabsContent>
+          )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {PLANS.map((plan) => (
-            <Card key={plan.name} className={plan.current ? 'border-primary shadow-elevated' : ''}>
+          <TabsContent value="plans" className="mt-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {(plans as Array<{ id: string; name: string; priceMonthly?: number; price?: number; features?: string[] }>).map((plan) => {
+                const current = subscription?.plan?.name === plan.name
+                return (
+                  <Card key={plan.id} className={current ? 'border-primary shadow-elevated' : ''}>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base">{plan.name}</CardTitle>
+                        {current && <Badge><Crown className="h-3 w-3 mr-1" /> Current</Badge>}
+                      </div>
+                      <CardDescription>
+                        <span className="text-2xl font-bold text-foreground">{formatCurrency(Number(plan.priceMonthly ?? plan.price ?? 0))}</span>/month
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="space-y-2">
+                        {(plan.features ?? []).map((f) => <li key={f} className="text-sm flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-success" />{f}</li>)}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+              {!plans.length && <p className="text-sm text-muted-foreground">No plans returned by the API.</p>}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="billing" className="mt-4 space-y-4">
+            <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">{plan.name}</CardTitle>
-                  {plan.current && <Badge><Crown className="h-3 w-3 mr-1" /> Current</Badge>}
-                </div>
-                <CardDescription><span className="text-2xl font-bold text-foreground">{formatCurrency(plan.price)}</span>/month</CardDescription>
+                <CardTitle className="text-base">Subscription</CardTitle>
+                <CardDescription>
+                  {subscription ? `${subscription.plan?.name ?? 'Plan'} · ${subscription.status ?? 'unknown'}` : 'No active subscription found'}
+                </CardDescription>
               </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
-                  {plan.features.map((f) => <li key={f} className="text-sm flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-success" />{f}</li>)}
-                </ul>
-                {!plan.current && <Button variant="outline" className="w-full mt-4">Upgrade</Button>}
+              <CardContent className="flex flex-wrap gap-2">
+                <Button onClick={() => generateInvoice.mutate()} disabled={generateInvoice.isPending}>Generate Invoice</Button>
+                <Button variant="outline" onClick={() => checkout.mutate('razorpay')} disabled={checkout.isPending}>Checkout (Razorpay)</Button>
+                <Button variant="outline" onClick={() => checkout.mutate('stripe')} disabled={checkout.isPending}>Checkout (Stripe)</Button>
               </CardContent>
             </Card>
-          ))}
-        </div>
+            <Card>
+              <CardHeader><CardTitle className="text-base">Recent Invoices</CardTitle></CardHeader>
+              <CardContent className="space-y-2">
+                {invoices.length === 0 && <p className="text-sm text-muted-foreground">No invoices yet</p>}
+                {invoices.map((invoice) => (
+                  <div key={invoice.id} className="flex items-center justify-between rounded-xl border p-3 text-sm">
+                    <div>
+                      <p className="font-medium">{invoice.invoiceNumber}</p>
+                      <p className="text-xs text-muted-foreground">Due {new Date(invoice.dueDate).toLocaleDateString()}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge variant="secondary">{invoice.status}</Badge>
+                      <span className="font-semibold">{formatCurrency(Number(invoice.amount))}</span>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </PageShell>
   )

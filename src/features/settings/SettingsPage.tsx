@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Save, Printer, CreditCard, Globe, Receipt, Building } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -17,16 +17,25 @@ import { BrandLogo } from '@/components/brand/BrandLogo'
 import { buildReceiptHtml } from '@/lib/print/receipt'
 import { settingsApi } from '@/api/settings.api'
 import { useTaxSettings, useInvalidateTaxSettings } from '@/hooks/useTaxSettings'
+import { printersApi } from '@/api/phase1.api'
 
 export default function SettingsPage() {
   const { data: taxSettings } = useTaxSettings()
   const invalidateTax = useInvalidateTaxSettings()
+  const queryClient = useQueryClient()
+  const { data: restaurant } = useQuery({ queryKey: ['settings', 'restaurant'], queryFn: settingsApi.getRestaurant })
+  const { data: printers = [] } = useQuery({ queryKey: ['printers'], queryFn: printersApi.list })
 
   const [gstPercent, setGstPercent] = useState('5')
   const [sgstPercent, setSgstPercent] = useState('2.5')
   const [cgstPercent, setCgstPercent] = useState('2.5')
   const [serviceChargePercent, setServiceChargePercent] = useState('0')
   const [taxInclusive, setTaxInclusive] = useState(false)
+  const [restaurantForm, setRestaurantForm] = useState({
+    name: '', legalName: '', gstin: '', fssai: '', fssaiNumber: '', defaultLanguage: 'en',
+    razorpayEnabled: false, stripeEnabled: false, squareEnabled: false, paypalEnabled: false,
+    razorpayKeyId: '', stripePublishableKey: '',
+  })
 
   useEffect(() => {
     if (taxSettings) {
@@ -37,6 +46,11 @@ export default function SettingsPage() {
       setTaxInclusive(taxSettings.taxInclusive)
     }
   }, [taxSettings])
+  useEffect(() => {
+    if (!restaurant) return
+    const value = restaurant as Record<string, unknown>
+    setRestaurantForm((current) => ({ ...current, ...Object.fromEntries(Object.keys(current).map((key) => [key, value[key] ?? current[key]])) }) as typeof current)
+  }, [restaurant])
 
   const saveTaxMutation = useMutation({
     mutationFn: () => settingsApi.updateTax({
@@ -51,6 +65,11 @@ export default function SettingsPage() {
       toast.success('Tax settings saved — POS will use new rates')
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to save tax settings'),
+  })
+  const saveRestaurantMutation = useMutation({
+    mutationFn: () => settingsApi.updateRestaurant({ ...restaurantForm, languages: [restaurantForm.defaultLanguage] }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['settings', 'restaurant'] }); toast.success('Restaurant settings saved') },
+    onError: (err: Error) => toast.error(err.message || 'Failed to save restaurant settings'),
   })
 
   return (
@@ -77,22 +96,21 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent className="space-y-4 max-w-2xl">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Restaurant Name</Label><Input defaultValue="DineHub Downtown" /></div>
-                  <div className="space-y-2"><Label>Phone</Label><Input defaultValue="+91 98765 43210" /></div>
+                  <div className="space-y-2"><Label>Restaurant Name</Label><Input value={restaurantForm.name} onChange={(event) => setRestaurantForm({ ...restaurantForm, name: event.target.value })} /></div>
+                  <div className="space-y-2"><Label>Legal Name</Label><Input value={restaurantForm.legalName} onChange={(event) => setRestaurantForm({ ...restaurantForm, legalName: event.target.value })} /></div>
                 </div>
-                <div className="space-y-2"><Label>Address</Label><Input defaultValue="123 Main Street, Mumbai" /></div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Currency</Label>
-                    <Select defaultValue="inr"><SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="usd">USD ($)</SelectItem><SelectItem value="eur">EUR (€)</SelectItem><SelectItem value="inr">INR (₹)</SelectItem></SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2"><Label>Timezone</Label>
-                    <Select defaultValue="ist"><SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="ist">India Standard Time</SelectItem><SelectItem value="est">Eastern Time</SelectItem></SelectContent>
+                  <div className="space-y-2"><Label>GSTIN</Label><Input value={restaurantForm.gstin} onChange={(event) => setRestaurantForm({ ...restaurantForm, gstin: event.target.value })} /></div>
+                  <div className="space-y-2"><Label>FSSAI</Label><Input value={restaurantForm.fssai || restaurantForm.fssaiNumber} onChange={(event) => setRestaurantForm({ ...restaurantForm, fssai: event.target.value, fssaiNumber: event.target.value })} /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label>Default Language</Label>
+                    <Select value={restaurantForm.defaultLanguage} onValueChange={(defaultLanguage) => setRestaurantForm({ ...restaurantForm, defaultLanguage })}><SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="hi">Hindi</SelectItem></SelectContent>
                     </Select>
                   </div>
                 </div>
+                <Button onClick={() => saveRestaurantMutation.mutate()} disabled={saveRestaurantMutation.isPending}><Save className="h-4 w-4 mr-2" /> Save Restaurant</Button>
               </CardContent>
             </Card>
           </TabsContent>
@@ -101,9 +119,25 @@ export default function SettingsPage() {
             <Card>
               <CardHeader><CardTitle className="text-base">Receipt Printer</CardTitle></CardHeader>
               <CardContent className="space-y-4 max-w-2xl">
-                <div className="flex items-center justify-between"><div><p className="font-medium">Thermal Printer</p><p className="text-sm text-muted-foreground">EPSON TM-T88VI</p></div><Switch defaultChecked /></div>
-                <Separator />
-                <div className="flex items-center justify-between"><div><p className="font-medium">Kitchen Printer</p><p className="text-sm text-muted-foreground">Star TSP143III</p></div><Switch defaultChecked /></div>
+                {(printers as Array<{ id: string; name: string; type?: string; isActive?: boolean }>).map((printer) => (
+                  <div key={printer.id} className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{printer.name}</p>
+                      <p className="text-sm text-muted-foreground">{printer.type ?? 'Printer'}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => printersApi.test(printer.id).then(() => toast.success('Printer configuration validated')).catch((error: Error) => toast.error(error.message || 'Printer test failed'))}
+                      >
+                        Test
+                      </Button>
+                      <Switch checked={printer.isActive ?? true} onCheckedChange={(isActive) => printersApi.update(printer.id, { isActive }).then(() => queryClient.invalidateQueries({ queryKey: ['printers'] }))} />
+                    </div>
+                  </div>
+                ))}
+                {printers.length > 0 && <Separator />}
                 <Separator />
                 <div className="flex items-center justify-between"><div><p className="font-medium">Auto Print Receipt</p></div><Switch defaultChecked /></div>
               </CardContent>
@@ -151,12 +185,14 @@ export default function SettingsPage() {
             <Card>
               <CardHeader><CardTitle className="text-base">Payment Gateway</CardTitle></CardHeader>
               <CardContent className="space-y-4 max-w-2xl">
-                {['Stripe', 'Square', 'PayPal', 'Razorpay'].map((gw) => (
-                  <div key={gw} className="flex items-center justify-between p-3 rounded-xl border">
+                {(['Stripe', 'Square', 'PayPal', 'Razorpay'] as const).map((gw) => {
+                  const key = `${gw.toLowerCase()}Enabled` as 'stripeEnabled' | 'squareEnabled' | 'paypalEnabled' | 'razorpayEnabled'
+                  return <div key={gw} className="flex items-center justify-between p-3 rounded-xl border">
                     <p className="font-medium">{gw}</p>
-                    <Switch defaultChecked={gw === 'Razorpay'} />
+                    <Switch checked={restaurantForm[key]} onCheckedChange={(enabled) => setRestaurantForm({ ...restaurantForm, [key]: enabled })} />
                   </div>
-                ))}
+                })}
+                <Button onClick={() => saveRestaurantMutation.mutate()} disabled={saveRestaurantMutation.isPending}><Save className="h-4 w-4 mr-2" /> Save Payment Settings</Button>
               </CardContent>
             </Card>
           </TabsContent>

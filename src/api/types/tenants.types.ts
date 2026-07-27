@@ -41,14 +41,19 @@ export interface Tenant {
 
 export interface CreateTenantRequest {
   name: string
-  slug: string
+  /** Optional — backend auto-generates from name when omitted */
+  slug?: string
   email: string
   phone?: string
+  address?: string
+  country?: string
+  timezone?: string
+  currency?: string
   ownerEmail: string
   ownerPassword: string
   ownerFirstName: string
   ownerLastName: string
-  planId?: string
+  planSlug?: string
 }
 
 export interface UpdateTenantRequest {

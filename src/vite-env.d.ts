@@ -14,6 +14,11 @@ interface ImportMetaEnv {
   readonly VITE_APP_NAME: string
 }
 
+interface ImportMetaEnv {
+  readonly MAIN_VITE_API_URL: string
+  readonly MAIN_VITE_SOCKET_URL: string
+}
+
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }

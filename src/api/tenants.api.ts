@@ -44,7 +44,7 @@ export const tenantsApi = {
     unwrap(apiClient.delete<ApiResponse<null>>(`/tenants/${id}`)),
 
   restore: (id: string) =>
-    unwrap(apiClient.patch<ApiResponse<Tenant>>(`/tenants/restore/${id}`)),
+    unwrap(apiClient.patch<ApiResponse<Tenant>>(`/tenants/${id}/restore`)),
 
   subscribe: (id: string, body: SubscribeRequest) =>
     unwrap(apiClient.post<ApiResponse<Tenant>>(`/tenants/${id}/subscribe`, body)),

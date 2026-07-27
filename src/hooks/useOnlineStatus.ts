@@ -18,10 +18,6 @@ export function useOnlineStatus() {
 
   useEffect(() => {
     const ping = async () => {
-      if (!navigator.onLine) {
-        setIsApiReachable(false)
-        return
-      }
       const reachable = await checkOnline()
       setIsApiReachable(reachable)
     }
@@ -30,5 +26,7 @@ export function useOnlineStatus() {
     return () => clearInterval(interval)
   }, [isOnline])
 
-  return { isOnline, isApiReachable, isOffline: !isOnline || !isApiReachable }
+  // The desktop app can use a local API even when Chromium reports that the
+  // machine has no public internet connection. API reachability is authoritative.
+  return { isOnline, isApiReachable, isOffline: !isApiReachable }
 }

@@ -8,4 +8,14 @@ export const reportsApi = {
         params: { period },
       }),
     ),
+
+  export: async (format: 'csv' | 'xlsx' | 'pdf', from?: string, to?: string) => {
+    const response = await apiClient.get('/reports/export', {
+      params: { format, from, to },
+      responseType: 'blob',
+    })
+    const disposition = String(response.headers['content-disposition'] ?? '')
+    const filename = disposition.match(/filename="?([^"]+)"?/)?.[1] ?? `sales-report.${format}`
+    return { blob: response.data as Blob, filename }
+  },
 }

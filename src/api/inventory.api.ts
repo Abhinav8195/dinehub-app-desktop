@@ -8,10 +8,10 @@ export const inventoryApi = {
   createWarehouse: (data: { name: string; location?: string; isDefault?: boolean }) =>
     unwrap(apiClient.post<ApiResponse<unknown>>('/inventory/warehouses', data)),
 
-  listItems: (lowStockOnly = false) =>
+  listItems: (lowStockOnly = false, itemType?: 'RAW' | 'FINISHED') =>
     unwrap(
       apiClient.get<ApiResponse<unknown[]>>('/inventory/items', {
-        params: lowStockOnly ? { lowStock: true } : undefined,
+        params: { ...(lowStockOnly ? { lowStock: true } : {}), ...(itemType ? { itemType } : {}) },
       }),
     ),
 
@@ -28,4 +28,13 @@ export const inventoryApi = {
 
   listLogs: () =>
     unwrap(apiClient.get<ApiResponse<unknown[]>>('/inventory/logs')),
+
+  transfer: (data: { fromWarehouseId: string; toWarehouseId: string; inventoryItemId: string; quantity: number; notes?: string }) =>
+    unwrap(apiClient.post<ApiResponse<unknown>>('/inventory/transfers', data)),
+
+  listTransfers: () =>
+    unwrap(apiClient.get<ApiResponse<unknown[]>>('/inventory/transfers')),
+
+  export: () =>
+    unwrap(apiClient.get<ApiResponse<{ filename: string; content: string }>>('/inventory/export')),
 }

@@ -97,6 +97,30 @@ export default function TablesPage() {
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to update status'),
   })
+  const transferMutation = useMutation({
+    mutationFn: ({ id, targetTableId }: { id: string; targetTableId: string }) => tablesApi.transfer(id, { targetTableId }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['tables'] }); toast.success('Table order transferred') },
+    onError: (err: Error) => toast.error(err.message || 'Failed to transfer table'),
+  })
+  const mergeMutation = useMutation({
+    mutationFn: (body: { sourceTableIds: string[]; targetTableId: string }) => tablesApi.merge(body),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['tables'] }); toast.success('Tables merged') },
+    onError: (err: Error) => toast.error(err.message || 'Failed to merge tables'),
+  })
+  const chooseTable = (message: string) => {
+    const number = window.prompt(message)
+    return tables.find((table) => String(table.number) === number)
+  }
+  const handleTransfer = () => {
+    const source = chooseTable('Source table number')
+    const target = chooseTable('Target table number')
+    if (source && target && source.id !== target.id) transferMutation.mutate({ id: source.id, targetTableId: target.id })
+  }
+  const handleMerge = () => {
+    const source = chooseTable('Source table number')
+    const target = chooseTable('Target table number')
+    if (source && target && source.id !== target.id) mergeMutation.mutate({ sourceTableIds: [source.id], targetTableId: target.id })
+  }
 
   const openAddDialog = () => {
     const nextNumber =
@@ -148,10 +172,10 @@ export default function TablesPage() {
               <Button type="button" variant="outline" onClick={() => refetch()} disabled={isFetching}>
                 <RefreshCw className={cn('h-4 w-4 mr-2', isFetching && 'animate-spin')} /> Refresh
               </Button>
-              <Button type="button" variant="outline" onClick={() => toast.info('Merge tables — coming soon')}>
+              <Button type="button" variant="outline" onClick={handleMerge} disabled={mergeMutation.isPending}>
                 <Merge className="h-4 w-4 mr-2" /> Merge
               </Button>
-              <Button type="button" variant="outline" onClick={() => toast.info('Transfer table — coming soon')}>
+              <Button type="button" variant="outline" onClick={handleTransfer} disabled={transferMutation.isPending}>
                 <ArrowRightLeft className="h-4 w-4 mr-2" /> Transfer
               </Button>
               <Button type="button" onClick={openAddDialog}>

@@ -1,192 +1,77 @@
-import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios'
+import axios, { type AxiosAdapter, type AxiosResponse } from 'axios'
 import { ApiError, type ApiErrorBody, type ApiResponse } from './types/common'
-import type { RefreshResponse } from './types/auth.types'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'
-
-// In-memory fallback when running outside Electron (e.g. vite-only preview)
-const memoryStore = {
-  accessToken: null as string | null,
-  refreshToken: null as string | null,
-  tenantSlug: null as string | null,
-  deviceId: 'dev-browser-id'
-}
-
-async function getElectronAPI() {
-  if (typeof window !== 'undefined' && window.electronAPI) {
-    return window.electronAPI
-  }
-  return null
-}
-
-export const tokenBridge = {
-  async getAccessToken(): Promise<string | null> {
-    const api = await getElectronAPI()
-    return api ? api.getToken() : memoryStore.accessToken
-  },
-  async getRefreshToken(): Promise<string | null> {
-    const api = await getElectronAPI()
-    return api ? api.getRefreshToken() : memoryStore.refreshToken
-  },
-  async setTokens(accessToken: string, refreshToken: string): Promise<void> {
-    const api = await getElectronAPI()
-    if (api) await api.setTokens({ accessToken, refreshToken })
-    else {
-      memoryStore.accessToken = accessToken
-      memoryStore.refreshToken = refreshToken
-    }
-  },
-  async clearTokens(): Promise<void> {
-    const api = await getElectronAPI()
-    if (api) await api.clearTokens()
-    else {
-      memoryStore.accessToken = null
-      memoryStore.refreshToken = null
-    }
-  },
-  async getTenantSlug(): Promise<string | null> {
-    const api = await getElectronAPI()
-    return api ? api.getTenantSlug() : memoryStore.tenantSlug
-  },
-  async setTenantSlug(slug: string): Promise<void> {
-    const api = await getElectronAPI()
-    if (api) await api.setTenantSlug(slug)
-    else memoryStore.tenantSlug = slug
-  },
-  async getDeviceId(): Promise<string> {
-    const api = await getElectronAPI()
-    return api ? api.getDeviceId() : memoryStore.deviceId
-  }
-}
-
-let isRefreshing = false
-let refreshQueue: Array<{
-  resolve: (token: string) => void
-  reject: (err: unknown) => void
-}> = []
-
-function processQueue(error: unknown, token: string | null = null) {
-  refreshQueue.forEach(({ resolve, reject }) => {
-    if (error) reject(error)
-    else if (token) resolve(token)
-  })
-  refreshQueue = []
-}
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://dininghub.in/api/v1'
 
 type AuthEventCallback = () => void
-const authEventListeners: AuthEventCallback[] = []
+const authEventListeners = new Set<AuthEventCallback>()
 
 export function onAuthExpired(callback: AuthEventCallback) {
-  authEventListeners.push(callback)
-  return () => {
-    const idx = authEventListeners.indexOf(callback)
-    if (idx >= 0) authEventListeners.splice(idx, 1)
-  }
+  authEventListeners.add(callback)
+  return () => authEventListeners.delete(callback)
 }
 
-function notifyAuthExpired() {
-  authEventListeners.forEach((cb) => cb())
+function notifyAuthExpired(): void {
+  authEventListeners.forEach((callback) => callback())
+}
+
+function getElectronAPI() {
+  return typeof window !== 'undefined' ? window.electronAPI : undefined
+}
+
+// Session metadata is available to the renderer; credentials are deliberately not.
+export const tokenBridge = {
+  hasSession: async (): Promise<boolean> => (await getElectronAPI()?.hasSession()) ?? false,
+  clearTokens: async (): Promise<void> => { await getElectronAPI()?.clearTokens() },
+  getTenantSlug: async (): Promise<string | null> => (await getElectronAPI()?.getTenantSlug()) ?? null,
+  setTenantSlug: async (slug: string): Promise<void> => { await getElectronAPI()?.setTenantSlug(slug) },
+  getDeviceId: async (): Promise<string> => (await getElectronAPI()?.getDeviceId()) ?? 'dev-browser-id'
+}
+
+interface BridgeResult {
+  ok: boolean
+  payload?: unknown
+  error?: ApiErrorBody
+}
+
+const electronAdapter: AxiosAdapter = async (config) => {
+  const bridge = getElectronAPI()
+  if (!bridge) {
+    throw new ApiError({ success: false, statusCode: 0, message: 'DineHub desktop bridge is unavailable' })
+  }
+  const rawData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data
+  const result = await bridge.requestDineHub({
+    method: (config.method?.toUpperCase() || 'GET') as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    path: config.url || '/',
+    query: config.params as Record<string, string | number | boolean | undefined> | undefined,
+    body: rawData
+  }) as BridgeResult
+  if (!result.ok) {
+    const error = new ApiError({
+      success: false,
+      statusCode: result.error?.statusCode ?? 0,
+      message: result.error?.message ?? 'Request failed',
+      errors: result.error?.errors,
+      path: result.error?.path
+    })
+    if (error.statusCode === 401) notifyAuthExpired()
+    throw error
+  }
+  return {
+    data: result.payload,
+    status: 200,
+    statusText: 'OK',
+    headers: {},
+    config
+  } satisfies AxiosResponse
 }
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
-  headers: { 'Content-Type': 'application/json' }
+  headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+  adapter: electronAdapter
 })
-
-apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
-  const token = await tokenBridge.getAccessToken()
-  const tenantSlug = await tokenBridge.getTenantSlug()
-
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  if (tenantSlug) config.headers['X-Tenant-Slug'] = tenantSlug
-
-  return config
-})
-
-apiClient.interceptors.response.use(
-  (response) => response,
-  async (error: AxiosError<ApiErrorBody>) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
-
-    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
-      const isAuthEndpoint = originalRequest.url?.includes('/auth/login') ||
-        originalRequest.url?.includes('/auth/refresh')
-
-      if (isAuthEndpoint) return Promise.reject(parseApiError(error))
-
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          refreshQueue.push({
-            resolve: (token: string) => {
-              originalRequest.headers.Authorization = `Bearer ${token}`
-              resolve(apiClient(originalRequest))
-            },
-            reject
-          })
-        })
-      }
-
-      originalRequest._retry = true
-      isRefreshing = true
-
-      try {
-        const refreshToken = await tokenBridge.getRefreshToken()
-        if (!refreshToken) throw new Error('No refresh token')
-
-        const { data } = await axios.post<ApiResponse<RefreshResponse>>(
-          `${API_BASE_URL}/auth/refresh`,
-          { refreshToken }
-        )
-
-        const { accessToken, refreshToken: newRefresh } = data.data.tokens
-        await tokenBridge.setTokens(accessToken, newRefresh)
-
-        processQueue(null, accessToken)
-        originalRequest.headers.Authorization = `Bearer ${accessToken}`
-        return apiClient(originalRequest)
-      } catch (refreshError) {
-        processQueue(refreshError, null)
-        await tokenBridge.clearTokens()
-        notifyAuthExpired()
-        return Promise.reject(refreshError)
-      } finally {
-        isRefreshing = false
-      }
-    }
-
-    const apiError = parseApiError(error)
-    logApiError(apiError)
-    return Promise.reject(apiError)
-  }
-)
-
-function parseApiError(error: AxiosError<ApiErrorBody>): ApiError {
-  if (error.response?.data) {
-    return new ApiError({
-      success: false,
-      statusCode: error.response.status,
-      message: error.response.data.message || 'Request failed',
-      errors: error.response.data.errors,
-      path: error.response.data.path,
-      timestamp: error.response.data.timestamp
-    })
-  }
-  return new ApiError({
-    success: false,
-    statusCode: error.response?.status || 0,
-    message: error.message || 'Network error'
-  })
-}
-
-async function logApiError(error: ApiError) {
-  const api = await getElectronAPI()
-  if (api?.onApiError) {
-    // fire-and-forget to main process log
-    window.electronAPI?.notify?.show?.('API Error', error.message)
-  }
-  console.error('[API]', error.statusCode, error.path, error.message)
-}
 
 export async function unwrap<T>(promise: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   const { data } = await promise
@@ -201,12 +86,13 @@ export async function unwrapPaginated<T>(promise: Promise<{ data: ApiResponse<T[
 }
 
 export async function checkOnline(): Promise<boolean> {
-  if (!navigator.onLine) return false
   try {
-    await axios.get(`${API_BASE_URL}/tenants/plans`, { timeout: 5000 })
+    await apiClient.get('/tenants/plans')
     return true
-  } catch {
-    return false
+  } catch (error) {
+    // Any HTTP response proves that the API host is reachable. Authentication,
+    // permissions, or a server error must not be reported as a network outage.
+    return error instanceof ApiError && error.statusCode > 0
   }
 }
 

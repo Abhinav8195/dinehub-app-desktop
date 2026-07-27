@@ -1,18 +1,12 @@
 import { ipcMain, shell } from 'electron'
 import { app } from 'electron'
 import {
-  getAccessToken, getRefreshToken, setTokens, clearTokens,
-  getTenantSlug, setTenantSlug, getDeviceId
+  clearTokens, getTenantSlug, setTenantSlug, getDeviceId
 } from '../store/secureStore'
 import { getMainWindow } from '../window'
 import { BrowserWindow } from 'electron'
 
 export function registerAuthIpcHandlers(): void {
-  ipcMain.handle('auth:getAccessToken', () => getAccessToken())
-  ipcMain.handle('auth:getRefreshToken', () => getRefreshToken())
-  ipcMain.handle('auth:setTokens', (_, tokens: { accessToken: string; refreshToken: string }) => {
-    setTokens(tokens)
-  })
   ipcMain.handle('auth:clearTokens', () => clearTokens())
   ipcMain.handle('auth:getTenantSlug', () => getTenantSlug())
   ipcMain.handle('auth:setTenantSlug', (_, slug: string) => setTenantSlug(slug))

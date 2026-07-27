@@ -13,4 +13,10 @@ export const tablesApi = {
     unwrap(
       apiClient.patch<ApiResponse<TableDto>>(`/tables/${id}/status`, { status }),
     ),
+
+  transfer: (id: string, body: { targetTableId: string; orderId?: string }) =>
+    unwrap(apiClient.post<ApiResponse<TableDto>>(`/tables/${id}/transfer`, body)),
+
+  merge: (body: { sourceTableIds: string[]; targetTableId: string }) =>
+    unwrap(apiClient.post<ApiResponse<TableDto>>('/tables/merge', body)),
 }

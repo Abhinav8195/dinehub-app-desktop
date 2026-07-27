@@ -1,15 +1,78 @@
-import { ipcMain, BrowserWindow, Notification, app } from 'electron'
+import { ipcMain, BrowserWindow, Notification, app, dialog } from 'electron'
+import { readFile, stat } from 'fs/promises'
+import { extname, basename } from 'path'
 import Store from 'electron-store'
 import { join } from 'path'
 import { autoUpdater } from 'electron-updater'
 import { getMainWindow } from '../window'
 import { registerAuthIpcHandlers } from './auth'
+import { requestDineHub, session, uploadMenuImage, type ApiRequest, type MenuImageUpload } from '../api/dinehubClient'
+import { connectRealtime, disconnectRealtime } from '../realtime'
 
 const store = new Store()
 const isDev = !app.isPackaged
 
 export function registerIpcHandlers(): void {
   registerAuthIpcHandlers()
+  ipcMain.handle('dinehub:request', async (_, request: ApiRequest) => {
+    try {
+      return { ok: true, payload: await requestDineHub(request) }
+    } catch (error) {
+      const failure = error as { statusCode?: number; message?: string; errors?: unknown; path?: string }
+      return {
+        ok: false,
+        error: {
+          statusCode: failure.statusCode ?? 0,
+          message: failure.message ?? 'Unable to reach DineHub',
+          errors: failure.errors,
+          path: failure.path
+        }
+      }
+    }
+  })
+  ipcMain.handle('auth:hasSession', () => session.hasSession())
+  ipcMain.handle('menu:selectImage', async () => {
+    const result = await dialog.showOpenDialog(getMainWindow() ?? undefined, {
+      title: 'Select menu image',
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }]
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    const filePath = result.filePaths[0]
+    const info = await stat(filePath)
+    if (info.size > 5 * 1024 * 1024) throw new Error('Image must be 5 MB or smaller')
+    const mimeByExtension: Record<string, MenuImageUpload['mimeType']> = {
+      '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+      '.webp': 'image/webp', '.gif': 'image/gif'
+    }
+    const mimeType = mimeByExtension[extname(filePath).toLowerCase()]
+    if (!mimeType) throw new Error('Select a JPEG, PNG, WebP, or GIF image')
+    const bytes = await readFile(filePath)
+    return {
+      name: basename(filePath),
+      mimeType,
+      size: bytes.byteLength,
+      base64: bytes.toString('base64'),
+      previewUrl: `data:${mimeType};base64,${bytes.toString('base64')}`
+    }
+  })
+  ipcMain.handle('menu:uploadImage', async (event, request: {
+    requestId: string
+    kind: 'category' | 'item'
+    file: MenuImageUpload
+  }) => {
+    try {
+      const payload = await uploadMenuImage(request.kind, request.file, (progress) => {
+        event.sender.send(`menu:uploadProgress:${request.requestId}`, progress)
+      })
+      return { ok: true, payload }
+    } catch (error) {
+      const failure = error as { statusCode?: number; message?: string; errors?: unknown }
+      return { ok: false, error: { statusCode: failure.statusCode ?? 0, message: failure.message ?? 'Image upload failed', errors: failure.errors } }
+    }
+  })
+  ipcMain.handle('realtime:connect', () => connectRealtime())
+  ipcMain.handle('realtime:disconnect', () => disconnectRealtime())
 
   ipcMain.handle('store:get', (_, key: string) => store.get(key))
   ipcMain.handle('store:set', (_, key: string, value: unknown) => store.set(key, value))

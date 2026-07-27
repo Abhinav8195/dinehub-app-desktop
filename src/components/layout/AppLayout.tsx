@@ -5,6 +5,7 @@ import { Topbar } from './Topbar'
 import { CommandPalette } from './CommandPalette'
 import { LockScreen } from '@/components/auth/LockScreen'
 import { ShiftCloseDialog } from '@/components/auth/ShiftDialog'
+import { OfflineBanner } from '@/components/common/OfflineBanner'
 import { useSessionTimeout } from '@/hooks/useSessionTimeout'
 import { useShiftStore } from '@/store/shiftStore'
 import { useAuth } from '@/hooks/useAuth'
@@ -35,6 +36,7 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      <OfflineBanner />
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         <Topbar onCloseShift={() => setShiftClose(true)} />
