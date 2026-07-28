@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
 import {
@@ -24,7 +24,8 @@ import { calculateTaxBreakdown } from '@/lib/tax'
 import { customersApi } from '@/api/customers.api'
 import { ordersApi } from '@/api/orders.api'
 import { enqueueSync } from '@/lib/offline'
-import type { TaxSettings, TableDto } from '@/api/types/pos.types'
+import type { PosOrder, TaxSettings, TableDto } from '@/api/types/pos.types'
+import { ApiError } from '@/api/types/common'
 import type { OrderItem } from '@/types'
 
 const VOUCHERS: Record<string, number> = {
@@ -41,7 +42,7 @@ interface CheckoutModalProps {
   tables: TableDto[]
   selectedTableId: string | null
   taxSettings: TaxSettings
-  onSuccess: (orderNumber: string, total: number, paymentMethod: string) => void
+  onSuccess: (orderNumber: string, total: number, paymentMethod: string, serverOrder?: PosOrder) => void
 }
 
 export function CheckoutModal({
@@ -63,6 +64,7 @@ export function CheckoutModal({
   const [appliedVoucher, setAppliedVoucher] = useState('')
   const [tableId, setTableId] = useState(selectedTableId || '')
   const [submitting, setSubmitting] = useState(false)
+  const submittingRef = useRef(false)
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
   const voucherDiscount = appliedVoucher ? (VOUCHERS[appliedVoucher] || 0) : 0
@@ -98,6 +100,7 @@ export function CheckoutModal({
   }
 
   const handleSubmit = async (paymentMethod: 'CASH' | 'CARD') => {
+    if (submittingRef.current) return
     if (orderType === 'dine-in' && !tableId) {
       toast.error('Please select a table for dine-in')
       return
@@ -111,15 +114,23 @@ export function CheckoutModal({
       return
     }
 
+    submittingRef.current = true
     setSubmitting(true)
     try {
       const payload = {
         type: orderType === 'dine-in' ? 'DINE_IN' : orderType === 'takeaway' ? 'TAKEAWAY' : 'DELIVERY',
         items: cart.map((item) => ({
-          menuItemId: item.id,
-          name: item.name,
+          ...(item.menuItemId ? {
+            menuItemId: item.menuItemId,
+            modifierOptionIds: item.modifiers?.map((modifier) => modifier.id) ?? [],
+          } : item.comboId ? {
+            comboId: item.comboId,
+          } : {
+            name: item.name,
+            unitPrice: item.price,
+          }),
           quantity: item.quantity,
-          unitPrice: item.price,
+          notes: item.notes,
         })),
         firstName: firstName.trim(),
         lastName: lastName.trim(),
@@ -146,13 +157,16 @@ export function CheckoutModal({
       }
       const order = await ordersApi.create(payload)
 
-      onSuccess(order.orderNumber, order.total, paymentMethod)
+      onSuccess(order.orderNumber, order.total, paymentMethod, order)
       onOpenChange(false)
       resetForm()
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to place order'
+      const message = err instanceof ApiError && err.errors
+        ? `${err.message}: ${Array.isArray(err.errors) ? err.errors.join(', ') : Object.values(err.errors).flat().join(', ')}`
+        : err instanceof Error ? err.message : 'Failed to place order'
       toast.error(message)
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }

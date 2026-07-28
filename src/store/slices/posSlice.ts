@@ -30,16 +30,28 @@ const posSlice = createSlice({
   initialState,
   reducers: {
     addToCart: (state, action: PayloadAction<OrderItem>) => {
-      const existing = state.cart.find((i) => i.id === action.payload.id)
+      const existing = state.cart.find((i) => i.lineKey === action.payload.lineKey)
       if (existing) existing.quantity += action.payload.quantity
       else state.cart.push(action.payload)
     },
     removeFromCart: (state, action: PayloadAction<string>) => {
-      state.cart = state.cart.filter((i) => i.id !== action.payload)
+      state.cart = state.cart.filter((i) => i.lineKey !== action.payload)
     },
     updateQuantity: (state, action: PayloadAction<{ id: string; quantity: number }>) => {
-      const item = state.cart.find((i) => i.id === action.payload.id)
+      const item = state.cart.find((i) => i.lineKey === action.payload.id)
       if (item) item.quantity = action.payload.quantity
+    },
+    replaceCartItem: (state, action: PayloadAction<{ oldLineKey: string; item: OrderItem }>) => {
+      const index = state.cart.findIndex((item) => item.lineKey === action.payload.oldLineKey)
+      if (index < 0) return
+      const matchingIndex = state.cart.findIndex((item, itemIndex) =>
+        itemIndex !== index && item.lineKey === action.payload.item.lineKey)
+      if (matchingIndex >= 0) {
+        state.cart[matchingIndex].quantity += action.payload.item.quantity
+        state.cart.splice(index, 1)
+      } else {
+        state.cart[index] = action.payload.item
+      }
     },
     clearCart: (state) => { state.cart = [] },
     setOrderType: (state, action: PayloadAction<POSState['orderType']>) => { state.orderType = action.payload },
@@ -68,6 +80,6 @@ const posSlice = createSlice({
 
 export const {
   addToCart, removeFromCart, updateQuantity, clearCart,
-  setOrderType, setSelectedTable, setDiscount, setTip, holdOrder, resumeOrder
+  setOrderType, setSelectedTable, setDiscount, setTip, holdOrder, resumeOrder, replaceCartItem
 } = posSlice.actions
 export default posSlice.reducer

@@ -26,7 +26,7 @@ import {
 import { APP_BASE } from '@/constants/navigation'
 import { getInitials, formatDateTime } from '@/lib/utils'
 import { PermissionGuard } from '@/guards/PermissionGuard'
-import { usersApi } from '@/api/phase1.api'
+import { userManagementApi } from '@/api/users-management.api'
 import { invitesApi } from '@/api/phase2.api'
 
 type User = { id: string; name: string; email: string; phone?: string; role: string; department?: string; status: string; lastLogin?: string; permissions: number; avatar?: string | null }
@@ -45,10 +45,11 @@ export default function UsersManagementPage() {
   const queryClient = useQueryClient()
   const { data: users = [] } = useQuery({
     queryKey: ['users'],
-    queryFn: async () => (await usersApi.list() as Array<Record<string, unknown>>).map((user): User => ({
-      id: String(user.id), name: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim(), email: String(user.email ?? ''),
-      phone: String(user.phone ?? ''), role: String(user.userType ?? 'STAFF'), department: String(user.department ?? ''),
-      status: String(user.status ?? 'ACTIVE').toLowerCase(), lastLogin: user.lastLoginAt ? String(user.lastLoginAt) : undefined, permissions: 0,
+    queryFn: async () => (await userManagementApi.list({ limit: 100 })).data.map((user): User => ({
+      id: user.id, name: user.name || `${user.firstName} ${user.lastName}`.trim(), email: user.email,
+      phone: user.phone ?? '', role: user.roles.map((role) => role.name).join(', ') || user.userType,
+      department: user.department?.name, status: user.status.toLowerCase().replace('_', '-'),
+      lastLogin: user.lastLoginAt ?? undefined, permissions: user.permissionCount,
     })),
   })
   const { data: apiDepartments = [] } = useQuery({ queryKey: ['users', 'departments'], queryFn: invitesApi.listDepartments })
@@ -108,7 +109,7 @@ export default function UsersManagementPage() {
             <DropdownMenuItem><Key className="h-3.5 w-3.5 mr-2" /> Reset Password</DropdownMenuItem>
             <DropdownMenuItem><Shield className="h-3.5 w-3.5 mr-2" /> Manage Roles</DropdownMenuItem>
             <DropdownMenuItem className="text-danger" onClick={() => {
-              usersApi.delete(row.original.id).then(() => { queryClient.invalidateQueries({ queryKey: ['users'] }); toast.success('User removed') }).catch((error: Error) => toast.error(error.message || 'Failed to remove user'))
+              userManagementApi.delete(row.original.id).then(() => { queryClient.invalidateQueries({ queryKey: ['users'] }); toast.success('User removed') }).catch((error: Error) => toast.error(error.message || 'Failed to remove user'))
             }}>
               <Trash2 className="h-3.5 w-3.5 mr-2" /> Deactivate
             </DropdownMenuItem>
@@ -121,7 +122,10 @@ export default function UsersManagementPage() {
   const createUser = useMutation({
     mutationFn: () => {
       const [firstName, ...last] = form.name.trim().split(/\s+/)
-      return usersApi.create({ firstName, lastName: last.join(' ') || firstName, email: form.email, password: 'ChangeMe123!', userType: form.role.toUpperCase(), department: form.department })
+      return userManagementApi.create({
+        firstName, lastName: last.join(' ') || firstName, email: form.email, phone: form.phone || undefined,
+        userType: form.role.toUpperCase(), roleIds: [], sendInvitation: true,
+      })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
@@ -167,7 +171,7 @@ export default function UsersManagementPage() {
           description="Manage staff accounts, roles, departments, and invitations"
           actions={
             <div className="flex gap-2">
-              <PermissionGuard permission="users.view">
+              <PermissionGuard permission="users.view" feature="employee_invites">
                 <Button variant="outline" onClick={() => setInviteOpen(true)}>
                   <Mail className="h-4 w-4 mr-2" /> Invite User
                 </Button>

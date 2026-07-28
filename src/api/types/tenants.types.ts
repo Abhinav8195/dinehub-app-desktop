@@ -8,8 +8,11 @@ export interface TenantPlan {
   currency: string
   interval: 'month' | 'year'
   features: string[]
+  isActive: boolean
   maxBranches: number
   maxUsers: number
+  maxStorageMb: number | null
+  maxApiCallsDay: number | null
 }
 
 export interface TenantBranding {

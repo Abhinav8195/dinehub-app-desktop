@@ -20,6 +20,11 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   'analytics.view': ['analytics.view', 'analytics.read'],
   'notifications.view': ['notifications.view', 'notifications.read'],
   'roles.manage': ['roles.manage', 'roles.read', 'roles.create', 'roles.update', 'roles.write'],
+  'inventory.warehouse.manage': ['inventory.warehouse.manage'],
+  'inventory.purchase.view': ['inventory.purchase.view', 'inventory.purchase.manage'],
+  'departments.view': ['departments.view', 'departments.manage'],
+  'users.invites.view': ['users.invites.view', 'users.invites.manage'],
+  'audit.view': ['audit.view'],
   'auth.sessions.read': ['auth.sessions.read', 'sessions.read']
 }
 
@@ -41,10 +46,13 @@ export function canAccessNav(
   userPermissions: string[],
   roles: string[],
   isSuperAdmin: boolean,
-  superAdminOnly?: boolean
+  superAdminOnly?: boolean,
+  featureAllowed = true
 ): boolean {
   if (superAdminOnly && !isSuperAdmin) return false
-  if (isSuperAdmin || isOwnerRole(roles)) return true
+  if (isSuperAdmin) return true
+  if (!featureAllowed) return false
+  if (isOwnerRole(roles)) return true
   if (!permission) return true
   if (userPermissions.length === 0) return true // show all if API didn't return permissions yet
   return matchPermission(userPermissions, permission)

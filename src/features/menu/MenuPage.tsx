@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { Edit, Eye, Image, Loader2, Plus, RefreshCw, Star, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -16,7 +16,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApiError } from '@/api/types/common'
 import { resolveMenuImageUrl } from '@/api/menu.api'
 import type { Category, MenuItem } from '@/api/types/menu.types'
-import { combosApi, modifiersApi } from '@/api/phase1.api'
 import { formatCurrency } from '@/lib/utils'
 import { useMenuManagement } from './useMenuManagement'
 import { ImageUploadField } from './components/ImageUploadField'
@@ -61,18 +60,7 @@ export default function MenuPage() {
   const menu = useMenuManagement(selectedCategory, showInactive)
   const categories = menu.categories.data ?? []
   const items = menu.items.data ?? []
-  const queryClient = useQueryClient()
-
-  const modifierQuery = useQuery({ queryKey: ['modifiers', 'groups'], queryFn: modifiersApi.listGroups })
-  const comboQuery = useQuery({ queryKey: ['combos'], queryFn: combosApi.list })
-  const createModifier = useMutation({
-    mutationFn: (name: string) => modifiersApi.createGroup({ name }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['modifiers'] }); toast.success('Modifier group created') }
-  })
-  const createCombo = useMutation({
-    mutationFn: (body: { name: string; price: number; items: Array<{ menuItemId: string; quantity: number }> }) => combosApi.create(body),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['combos'] }); toast.success('Combo created') }
-  })
+  const navigate = useNavigate()
 
   useEffect(() => setSelectedIds(new Set()), [selectedCategory, showInactive])
 
@@ -203,11 +191,14 @@ export default function MenuPage() {
           </div>
         } />
 
-        <Tabs defaultValue="menu">
+        <Tabs value="menu" onValueChange={(value) => {
+          if (value === 'modifiers') navigate('/app/menu/modifiers')
+          if (value === 'combos') navigate('/app/menu/combos')
+        }}>
           <TabsList>
             <TabsTrigger value="menu">Menu</TabsTrigger>
-            <TabsTrigger value="modifiers">Modifiers ({modifierQuery.data?.length ?? 0})</TabsTrigger>
-            <TabsTrigger value="combos">Combos ({comboQuery.data?.length ?? 0})</TabsTrigger>
+            <TabsTrigger value="modifiers">Modifiers</TabsTrigger>
+            <TabsTrigger value="combos">Combos</TabsTrigger>
           </TabsList>
           <TabsContent value="menu" className="mt-4">
             <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -289,19 +280,6 @@ export default function MenuPage() {
                 )}
               </section>
             </div>
-          </TabsContent>
-          <TabsContent value="modifiers" className="mt-4 space-y-3">
-            <Button variant="outline" onClick={() => { const name = window.prompt('Modifier group name'); if (name?.trim()) createModifier.mutate(name.trim()) }}><Plus className="mr-2 h-4 w-4" /> Add modifier group</Button>
-            {(modifierQuery.data ?? []).map((group) => <Card key={group.id}><CardContent className="p-4"><p className="font-semibold">{group.name}</p><p className="text-sm text-muted-foreground">{group.options?.length ?? 0} options</p></CardContent></Card>)}
-          </TabsContent>
-          <TabsContent value="combos" className="mt-4 space-y-3">
-            <Button variant="outline" onClick={() => {
-              if (!items[0]) return toast.error('Create a menu item first')
-              const name = window.prompt('Combo name')
-              const price = Number(window.prompt('Combo price'))
-              if (name?.trim() && Number.isFinite(price) && price >= 0) createCombo.mutate({ name: name.trim(), price, items: [{ menuItemId: items[0].id, quantity: 1 }] })
-            }}><Plus className="mr-2 h-4 w-4" /> Add combo</Button>
-            {(comboQuery.data ?? []).map((combo) => <Card key={combo.id}><CardContent className="flex justify-between p-4"><p className="font-semibold">{combo.name}</p><p className="font-bold text-primary">{formatCurrency(Number(combo.price))}</p></CardContent></Card>)}
           </TabsContent>
         </Tabs>
 

@@ -62,7 +62,21 @@ function buildUrl(path: string, query?: ApiRequest['query']): string {
 
 async function parseResponse(response: Response): Promise<unknown> {
   const text = await response.text()
-  const payload = text ? JSON.parse(text) as Record<string, unknown> : null
+  let payload: Record<string, unknown> | null = null
+  if (text) {
+    try {
+      payload = JSON.parse(text) as Record<string, unknown>
+    } catch {
+      const isHtml = /^\s*</.test(text)
+      const failure: ApiFailure = {
+        statusCode: response.status,
+        message: isHtml
+          ? `DineHub API gateway returned ${response.status || 'an invalid response'}. Please try again shortly.`
+          : 'DineHub API returned an invalid response.'
+      }
+      throw failure
+    }
+  }
   if (response.ok) return payload
   const failure: ApiFailure = {
     statusCode: response.status,
@@ -92,7 +106,10 @@ async function refreshAccessToken(): Promise<string> {
   try {
     return await refreshPromise
   } catch (error) {
-    clearTokens()
+    const statusCode = (error as Partial<ApiFailure> | null)?.statusCode
+    // A network/gateway failure does not mean the refresh token is invalid.
+    // Keep the persisted session so the app can retry when the API recovers.
+    if (statusCode === 401 || statusCode === 403) clearTokens()
     throw error
   } finally {
     refreshPromise = null
@@ -144,7 +161,7 @@ async function sendOnce(request: ApiRequest, accessToken: string): Promise<unkno
 }
 
 async function sendImageUpload(
-  path: '/menu/categories/upload-image' | '/menu/items/upload-image',
+  path: '/files/upload',
   file: MenuImageUpload,
   accessToken: string | null,
   onProgress: (progress: number) => void
@@ -169,7 +186,7 @@ async function sendImageUpload(
 }
 
 async function sendImageUploadOnce(
-  path: '/menu/categories/upload-image' | '/menu/items/upload-image',
+  path: '/files/upload',
   file: MenuImageUpload,
   accessToken: string,
   onProgress: (progress: number) => void
@@ -204,18 +221,39 @@ export async function requestDineHub(request: ApiRequest): Promise<unknown> {
 }
 
 export async function uploadMenuImage(
-  kind: 'category' | 'item',
+  kind: 'category' | 'item' | 'combo',
   file: MenuImageUpload,
   onProgress: (progress: number) => void
 ): Promise<unknown> {
-  if (file.size <= 0 || file.size > 5 * 1024 * 1024) {
-    throw { statusCode: 400, message: 'Image must be 5 MB or smaller' } satisfies ApiFailure
+  const maxSize = kind === 'combo' ? 5 * 1024 * 1024 : 1024 * 1024
+  if (file.size <= 0 || file.size > maxSize) {
+    throw { statusCode: 400, message: `Image must be ${kind === 'combo' ? 5 : 1} MB or smaller` } satisfies ApiFailure
   }
   if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.mimeType)) {
     throw { statusCode: 400, message: 'Select a JPEG, PNG, WebP, or GIF image' } satisfies ApiFailure
   }
-  const path = kind === 'category' ? '/menu/categories/upload-image' : '/menu/items/upload-image'
-  return sendImageUpload(path, file, getAccessToken(), onProgress)
+  const payload = await sendImageUpload('/files/upload', file, getAccessToken(), onProgress)
+  const response = payload as {
+    data?: { imageUrl?: unknown; url?: unknown; fileUrl?: unknown; path?: unknown }
+  }
+  const uploadedUrl = [
+    response.data?.imageUrl,
+    response.data?.url,
+    response.data?.fileUrl,
+    response.data?.path
+  ].find((value): value is string => typeof value === 'string' && value.length > 0)
+
+  if (!uploadedUrl) {
+    throw {
+      statusCode: 502,
+      message: 'The image was uploaded, but the server did not return its URL.'
+    } satisfies ApiFailure
+  }
+
+  return {
+    ...(payload as Record<string, unknown>),
+    data: { ...response.data, imageUrl: uploadedUrl }
+  }
 }
 
 export const session = {

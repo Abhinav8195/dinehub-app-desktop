@@ -21,7 +21,8 @@ const mapCategory = (category: Category): Category => ({
 const mapMenuItem = (item: MenuItem): MenuItem => ({
   ...item,
   available: item.available,
-  popular: item.popular
+  popular: item.popular,
+  modifierGroups: item.modifierGroups ?? []
 })
 
 export const categoryService = {

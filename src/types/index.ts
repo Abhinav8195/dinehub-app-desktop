@@ -30,10 +30,13 @@ export interface Branch {
 
 export interface OrderItem {
   id: string
+  lineKey: string
+  menuItemId?: string
+  comboId?: string
   name: string
   quantity: number
   price: number
-  modifiers?: string[]
+  modifiers?: Array<{ id: string; groupId: string; groupName: string; name: string; price: number }>
   notes?: string
 }
 

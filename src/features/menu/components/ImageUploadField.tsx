@@ -12,7 +12,7 @@ interface UploadResult {
 }
 
 interface ImageUploadFieldProps {
-  kind: 'category' | 'item'
+  kind: 'category' | 'item' | 'combo'
   value?: string
   onUploaded: (imageUrl: string) => void
   onUploadingChange: (uploading: boolean) => void
@@ -29,12 +29,13 @@ export function ImageUploadField({ kind, value, onUploaded, onUploadingChange }:
   const selectAndUpload = async () => {
     setError(null)
     try {
-      const file = await window.electronAPI.menuImages.select()
+      const file = await window.electronAPI.menuImages.select(kind)
       if (!file) return
       if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.mimeType)) {
         throw new Error('Select a JPEG, PNG, WebP, or GIF image')
       }
-      if (file.size > 5 * 1024 * 1024) throw new Error('Image must be 5 MB or smaller')
+      const maxSizeMb = kind === 'combo' ? 5 : 1
+      if (file.size > maxSizeMb * 1024 * 1024) throw new Error(`Image must be ${maxSizeMb} MB or smaller`)
       setPreviewUrl(file.previewUrl)
       setUploading(true)
       onUploadingChange(true)
@@ -74,7 +75,7 @@ export function ImageUploadField({ kind, value, onUploaded, onUploadingChange }:
             {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
             {previewUrl ? 'Replace image' : 'Select image'}
           </Button>
-          <p className="text-xs text-muted-foreground">JPEG, PNG, WebP, or GIF · maximum 5 MB</p>
+          <p className="text-xs text-muted-foreground">JPEG, PNG, WebP, or GIF · maximum {kind === 'combo' ? 5 : 1} MB</p>
           {uploading && (
             <div className="space-y-1">
               <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all" style={{ width: `${progress}%` }} /></div>

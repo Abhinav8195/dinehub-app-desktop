@@ -1,236 +1,347 @@
-import { useState } from 'react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { QrCode, Download, Eye, Smartphone, Loader2 } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
+import {
+  BellRing,
+  CheckCircle2,
+  Download,
+  Eye,
+  ExternalLink,
+  Loader2,
+  QrCode,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react'
+import { toast } from 'sonner'
 import { PageHeader } from '@/components/common/PageHeader'
 import { PageShell } from '@/components/common/PageShell'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { BRAND } from '@/constants/brand'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { tablesApi } from '@/api/tables.api'
-import { qrApi } from '@/api/phase1.api'
-import { toast } from 'sonner'
+import {
+  qrOrderingApi,
+  waiterRequestsApi,
+  type QrCodeRecord,
+  type WaiterRequest,
+} from '@/api/qr-ordering.api'
+
+const waiterLabels: Record<WaiterRequest['type'], string> = {
+  WAITER: 'Call waiter',
+  WATER: 'Water',
+  BILL: 'Bill requested',
+  CLEAN_TABLE: 'Clean table',
+  ASSISTANCE: 'Assistance',
+  OTHER: 'Other request',
+}
 
 export default function QROrderingPage() {
   const queryClient = useQueryClient()
   const [label, setLabel] = useState('')
   const [tableId, setTableId] = useState('')
-  const [preview, setPreview] = useState<string | null>(null)
-  const { data: tables = [], isLoading } = useQuery({
+  const [preview, setPreview] = useState<{ title: string; url: string } | null>(null)
+
+  const { data: tables = [] } = useQuery({
     queryKey: ['tables'],
     queryFn: () => tablesApi.list(),
+  })
+  const { data: codes = [], isLoading: codesLoading } = useQuery({
+    queryKey: ['qr-codes'],
+    queryFn: qrOrderingApi.list,
+  })
+  const { data: waiterResult, isLoading: waiterLoading } = useQuery({
+    queryKey: ['waiter-requests'],
+    queryFn: () => waiterRequestsApi.list(),
     refetchInterval: 15_000,
   })
-  const { data: codes = [] } = useQuery({ queryKey: ['qr'], queryFn: qrApi.list })
-  const { data: stats } = useQuery({ queryKey: ['qr', 'stats'], queryFn: qrApi.stats })
+  const waiterRequests = waiterResult?.data ?? []
+
+  const refreshQr = () => queryClient.invalidateQueries({ queryKey: ['qr-codes'] })
+  const refreshWaiters = () => queryClient.invalidateQueries({ queryKey: ['waiter-requests'] })
+
   const createQr = useMutation({
-    mutationFn: () => qrApi.create({ label, tableIds: tableId ? [tableId] : undefined }),
-    onSuccess: (result) => { const first = (result as Array<{ qrDataUrl?: string }>)[0]; setPreview(first?.qrDataUrl ?? null); queryClient.invalidateQueries({ queryKey: ['qr'] }); setLabel(''); toast.success('QR code generated') },
-    onError: (error: Error) => toast.error(error.message || 'Failed to generate QR code'),
+    mutationFn: () => qrOrderingApi.create({ tableId, label: label.trim() || undefined }),
+    onSuccess: async (record) => {
+      setLabel('')
+      setTableId('')
+      await refreshQr()
+      toast.success('Secure QR code generated')
+      await showPreview(record)
+    },
+    onError: (error: Error) => toast.error(error.message || 'Unable to generate QR code'),
   })
-  const downloadQr = async (id: string) => {
-    try {
-      const qr = await qrApi.download(id) as { qrDataUrl?: string }
-      if (!qr.qrDataUrl) return
-      const link = document.createElement('a')
-      link.href = qr.qrDataUrl
-      link.download = `dinehub-qr-${id}.png`
-      link.click()
-    } catch (error) { toast.error(error instanceof Error ? error.message : 'Failed to download QR') }
-  }
-  const previewQr = async (id: string) => {
-    try { setPreview((await qrApi.download(id) as { qrDataUrl?: string }).qrDataUrl ?? null) } catch { toast.error('Failed to load QR preview') }
-  }
+  const updateQr = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      qrOrderingApi.update(id, { isActive }),
+    onSuccess: () => {
+      refreshQr()
+      toast.success('QR status updated')
+    },
+    onError: (error: Error) => toast.error(error.message || 'Unable to update QR code'),
+  })
+  const regenerateQr = useMutation({
+    mutationFn: qrOrderingApi.regenerate,
+    onSuccess: async (record) => {
+      await refreshQr()
+      toast.success('QR token regenerated; the old QR is now invalid')
+      await showPreview(record)
+    },
+    onError: (error: Error) => toast.error(error.message || 'Unable to regenerate QR code'),
+  })
+  const deleteQr = useMutation({
+    mutationFn: qrOrderingApi.remove,
+    onSuccess: () => {
+      refreshQr()
+      toast.success('QR code deleted')
+    },
+    onError: (error: Error) => toast.error(error.message || 'Unable to delete QR code'),
+  })
+  const waiterAction = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: 'acknowledge' | 'complete' | 'cancel' }) =>
+      waiterRequestsApi[action](id),
+    onSuccess: () => {
+      refreshWaiters()
+      toast.success('Waiter request updated')
+    },
+    onError: (error: Error) => toast.error(error.message || 'Unable to update waiter request'),
+  })
 
-  const [genUrl, setGenUrl] = useState(`${BRAND.urls.menu}/table/5`)
-  const [genTable, setGenTable] = useState('Table 5')
-  const [activeQrUrl, setActiveQrUrl] = useState<string | null>(null)
-  
-  const [previewTable, setPreviewTable] = useState<{ id: string, number: string, url: string } | null>(null)
+  const stats = useMemo(() => ({
+    total: codes.length,
+    active: codes.filter((code) => code.isActive).length,
+    scans: codes.reduce((total, code) => total + code.scanCount, 0),
+    orders: codes.reduce((total, code) => total + code.orderCount, 0),
+    pending: waiterRequests.filter((request) => request.status === 'PENDING').length,
+  }), [codes, waiterRequests])
 
-  const handleGenerate = () => {
-    setActiveQrUrl(genUrl)
-  }
-
-  const downloadQRCode = (canvasId: string, fileName: string) => {
-    const canvas = document.getElementById(canvasId) as HTMLCanvasElement
-    if (!canvas) return
-    const pngUrl = canvas.toDataURL("image/png").replace("image/png", "image/octet-stream")
-    const downloadLink = document.createElement("a")
-    downloadLink.href = pngUrl
-    downloadLink.download = `${fileName}.png`
-    document.body.appendChild(downloadLink)
-    downloadLink.click()
-    document.body.removeChild(downloadLink)
-  }
-
-  const exportAll = () => {
-    tables.forEach(table => {
-      downloadQRCode(`qr-table-${table.id}`, `Table-${table.number}-QR`)
+  function showPreview(record: QrCodeRecord) {
+    setPreview({
+      title: record.label || `Table ${record.table?.number ?? ''}`,
+      url: record.publicUrl,
     })
+  }
+
+  function downloadQr(record: QrCodeRecord) {
+    try {
+      const canvas = document.getElementById(`qr-download-${record.id}`)
+      if (!(canvas instanceof HTMLCanvasElement)) throw new Error('Unable to create QR image')
+      const link = document.createElement('a')
+      link.href = canvas.toDataURL('image/png')
+      link.download = `dinehub-table-${record.table?.number ?? record.id}.png`
+      link.click()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to download QR')
+    }
   }
 
   return (
     <PageShell>
       <div className="page-container">
-        <PageHeader title="QR Ordering" description={`${BRAND.name} contactless table ordering`} actions={
-          <Button onClick={exportAll}><Download className="h-4 w-4 mr-2" /> Export All QR</Button>
-        } />
+        <PageHeader
+          title="QR Ordering"
+          description="Secure customer ordering and real-time table assistance"
+          actions={<Badge variant="success">{stats.active} active QR codes</Badge>}
+        />
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <Card className="lg:col-span-1">
-            <CardHeader>
-              <CardTitle className="text-base">QR Generator</CardTitle>
-              <CardDescription>Configure and generate table QR codes</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Label</Label>
-                <Input placeholder="e.g. Patio menu" value={label} onChange={(event) => setLabel(event.target.value)} />
-                <Label>Table Number</Label>
-                <Input placeholder="e.g. Table 5" value={genTable} onChange={e => setGenTable(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Table</Label>
-                <Select value={tableId} onValueChange={setTableId}><SelectTrigger><SelectValue placeholder="Optional table" /></SelectTrigger><SelectContent>{(tables as Array<{ id: string; number?: number }>).map((table) => <SelectItem key={table.id} value={table.id}>Table {table.number ?? table.id}</SelectItem>)}</SelectContent></Select>
-                <Label>Menu URL</Label>
-                <Input value={genUrl} onChange={e => setGenUrl(e.target.value)} />
-              </div>
-              <Button className="w-full" onClick={() => createQr.mutate()} disabled={createQr.isPending}><QrCode className="h-4 w-4 mr-2" /> Generate QR</Button>
-              <div className="flex items-center justify-center p-8 rounded-2xl bg-brand-light/40">
-                <div className="h-40 w-40 rounded-xl bg-white flex flex-col items-center justify-center border-2 border-dashed border-border p-4">
-                  {preview ? <img src={preview} alt="Generated QR code" className="h-full w-full object-contain" /> : <QrCode className="h-20 w-20 text-foreground" />}
-              <Button className="w-full" onClick={handleGenerate}>
-                <QrCode className="h-4 w-4 mr-2" /> Generate QR
-              </Button>
-              <div className="flex flex-col items-center justify-center p-8 rounded-2xl bg-brand-light/40 gap-4">
-                <div className="rounded-xl bg-white flex flex-col items-center justify-center border-2 border-dashed border-border p-4 min-h-[196px] min-w-[196px]">
-                  {activeQrUrl ? (
-                    <QRCodeCanvas 
-                      id="qr-generator-canvas"
-                      value={activeQrUrl} 
-                      size={160} 
-                      level="H" 
-                      includeMargin 
-                      imageSettings={{ src: BRAND.logo, excavate: true, height: 40, width: 40 }} 
-                    />
-                  ) : (
-                    <div className="text-center text-muted-foreground flex flex-col items-center">
-                      <QrCode className="h-10 w-10 mb-2 opacity-20" />
-                      <span className="text-xs">Click Generate to preview</span>
-                    </div>
-                  )}
-                </div>
-                {activeQrUrl && (
-                  <Button variant="outline" size="sm" onClick={() => downloadQRCode('qr-generator-canvas', `${genTable}-QR`)}>
-                    <Download className="h-3.5 w-3.5 mr-2" /> Download Image
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="text-base">Table QR Codes</CardTitle>
-              <CardDescription>Active QR codes for all tables</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>
-              ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {tables.map((table) => {
-                  const tableUrl = `${BRAND.urls.menu}/table/${table.id}`
-                  const canvasId = `qr-table-${table.id}`
-                  return (
-                    <div key={table.id} className="flex flex-col items-center p-4 rounded-2xl border bg-card hover:shadow-elevated transition-all">
-                      <div className="rounded-xl bg-white flex items-center justify-center mb-3 p-2">
-                         <QRCodeCanvas 
-                          id={canvasId}
-                          value={tableUrl} 
-                          size={100} 
-                          level="H" 
-                          includeMargin={false} 
-                        />
-                      </div>
-                      <p className="font-semibold">Table {table.number}</p>
-                      <p className="text-xs text-muted-foreground capitalize">{table.floor} · {table.status}</p>
-                      <div className="flex gap-1 mt-2">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPreviewTable({ id: table.id, number: table.number, url: tableUrl })}>
-                          <Eye className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => downloadQRCode(canvasId, `Table-${table.number}-QR`)}>
-                          <Download className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                {(codes as Array<{ id: string; label?: string; table?: { number?: number; floor?: string; status?: string } }>).map((code) => (
-                  <div key={code.id} className="flex flex-col items-center p-4 rounded-2xl border bg-card hover:shadow-elevated transition-all">
-                    <div className="h-24 w-24 rounded-xl bg-muted flex items-center justify-center mb-3">
-                      <QrCode className="h-16 w-16" />
-                    </div>
-                    <p className="font-semibold">{code.label || `Table ${code.table?.number ?? 'QR'}`}</p>
-                    <p className="text-xs text-muted-foreground capitalize">{code.table?.floor ?? 'General'} · {code.table?.status ?? 'active'}</p>
-                    <div className="flex gap-1 mt-2">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => previewQr(code.id)}><Eye className="h-3.5 w-3.5" /></Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => downloadQr(code.id)}><Download className="h-3.5 w-3.5" /></Button>
-                    </div>
-                  )
-                })}
-              </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
           {[
-            { title: 'QR Codes', value: String((stats as { total?: number } | undefined)?.total ?? 0), desc: 'Generated codes' },
-            { title: 'Scans', value: String((stats as { scans?: number } | undefined)?.scans ?? 0), desc: 'QR menu views' },
-            { title: 'Orders', value: String((stats as { orders?: number } | undefined)?.orders ?? 0), desc: 'QR orders' }
-          ].map((stat) => (
-            <Card key={stat.title}>
-              <CardContent className="p-5 flex items-center gap-4">
-                <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <Smartphone className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{stat.value}</p>
-                  <p className="text-sm text-muted-foreground">{stat.title}</p>
-                </div>
-                <Badge variant="secondary" className="ml-auto">{stat.desc}</Badge>
+            ['QR codes', stats.total],
+            ['Active', stats.active],
+            ['Scans', stats.scans],
+            ['Orders', stats.orders],
+            ['Pending calls', stats.pending],
+          ].map(([title, value]) => (
+            <Card key={title}>
+              <CardContent className="p-4">
+                <p className="text-2xl font-bold">{value}</p>
+                <p className="text-xs text-muted-foreground">{title}</p>
               </CardContent>
             </Card>
           ))}
         </div>
 
-        <Dialog open={!!previewTable} onOpenChange={(open) => !open && setPreviewTable(null)}>
-          <DialogContent className="sm:max-w-md flex flex-col items-center">
-            <DialogHeader>
-              <DialogTitle>Table {previewTable?.number} QR Code</DialogTitle>
-              <DialogDescription className="text-center">{previewTable?.url}</DialogDescription>
-            </DialogHeader>
-            <div className="my-6 p-4 bg-white rounded-xl">
-              {previewTable && (
-                <QRCodeCanvas 
-                  id="preview-canvas"
-                  value={previewTable.url} 
-                  size={240} 
-                  level="H" 
-                  includeMargin 
-                  imageSettings={{ src: BRAND.logo, excavate: true, height: 50, width: 50 }} 
-                />
-              )}
+        <Tabs defaultValue="codes">
+          <TabsList>
+            <TabsTrigger value="codes">QR codes</TabsTrigger>
+            <TabsTrigger value="waiter">
+              Waiter calls
+              {stats.pending > 0 && <Badge className="ml-2">{stats.pending}</Badge>}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="codes" className="mt-4 space-y-5">
+            <div className="grid gap-5 lg:grid-cols-[340px_1fr]">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Generate QR code</CardTitle>
+                  <CardDescription>The backend creates a secure, revocable table token.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Table</Label>
+                    <Select value={tableId} onValueChange={setTableId}>
+                      <SelectTrigger><SelectValue placeholder="Select a table" /></SelectTrigger>
+                      <SelectContent>
+                        {tables.map((table) => (
+                          <SelectItem key={table.id} value={table.id}>
+                            Table {table.number} · {table.floor}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Label</Label>
+                    <Input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Patio table 4" />
+                  </div>
+                  <Button className="w-full" disabled={!tableId || createQr.isPending} onClick={() => createQr.mutate()}>
+                    {createQr.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <QrCode className="mr-2 h-4 w-4" />}
+                    Generate secure QR
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Issued QR codes</CardTitle>
+                  <CardDescription>Regenerating immediately invalidates the previous customer link.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {codesLoading ? (
+                    <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>
+                  ) : !codes.length ? (
+                    <p className="py-10 text-center text-sm text-muted-foreground">No QR codes generated yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {codes.map((record) => (
+                        <div key={record.id} className="flex flex-wrap items-center gap-3 rounded-xl border p-4">
+                          <QRCodeCanvas
+                            id={`qr-download-${record.id}`}
+                            value={record.publicUrl}
+                            size={1024}
+                            level="H"
+                            marginSize={4}
+                            className="hidden"
+                          />
+                          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10">
+                            <QrCode className="h-5 w-5 text-primary" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold">{record.label || `Table ${record.table?.number ?? 'QR'}`}</p>
+                              <Badge variant={record.isActive ? 'success' : 'secondary'}>{record.isActive ? 'Active' : 'Inactive'}</Badge>
+                            </div>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {record.table ? `${record.table.floor} · Table ${record.table.number}` : 'No table'} · {record.scanCount} scans · {record.orderCount} orders
+                            </p>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" onClick={() => showPreview(record)} title="Preview"><Eye className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" onClick={() => downloadQr(record)} title="Download"><Download className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" onClick={() => regenerateQr.mutate(record.id)} title="Regenerate"><RefreshCw className="h-4 w-4" /></Button>
+                            <Button variant="outline" size="sm" onClick={() => updateQr.mutate({ id: record.id, isActive: !record.isActive })}>
+                              {record.isActive ? 'Disable' : 'Enable'}
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => deleteQr.mutate(record.id)} title="Delete"><Trash2 className="h-4 w-4 text-danger" /></Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
-            <Button className="w-full" onClick={() => downloadQRCode('preview-canvas', `Table-${previewTable?.number}-QR`)}>
-              <Download className="mr-2 h-4 w-4" /> Download QR
-            </Button>
+          </TabsContent>
+
+          <TabsContent value="waiter" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base"><BellRing className="h-5 w-5" /> Live waiter calls</CardTitle>
+                <CardDescription>Requests are persisted by the backend and refreshed after reconnecting.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {waiterLoading ? (
+                  <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>
+                ) : !waiterRequests.length ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">No waiter requests.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {waiterRequests.map((request) => {
+                      const table = tables.find((item) => item.id === request.tableId)
+                      return (
+                        <div key={request.id} className="flex flex-wrap items-center gap-3 rounded-xl border p-4">
+                          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-warning/10">
+                            <BellRing className="h-5 w-5 text-warning" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold">{waiterLabels[request.type]}</p>
+                              <Badge variant={request.status === 'PENDING' ? 'destructive' : request.status === 'ACKNOWLEDGED' ? 'secondary' : 'success'}>
+                                {request.status}
+                              </Badge>
+                            </div>
+                            <p className="text-sm">Table {table?.number ?? request.tableId}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {request.message || 'No message'} · {new Date(request.requestedAt).toLocaleTimeString()}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            {request.status === 'PENDING' && (
+                              <Button size="sm" onClick={() => waiterAction.mutate({ id: request.id, action: 'acknowledge' })}>
+                                Acknowledge
+                              </Button>
+                            )}
+                            {request.status === 'ACKNOWLEDGED' && (
+                              <Button size="sm" onClick={() => waiterAction.mutate({ id: request.id, action: 'complete' })}>
+                                <CheckCircle2 className="mr-2 h-4 w-4" /> Complete
+                              </Button>
+                            )}
+                            {(request.status === 'PENDING' || request.status === 'ACKNOWLEDGED') && (
+                              <Button variant="outline" size="sm" onClick={() => waiterAction.mutate({ id: request.id, action: 'cancel' })}>
+                                Cancel
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+
+        <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{preview?.title}</DialogTitle>
+              <DialogDescription className="break-all">{preview?.url}</DialogDescription>
+            </DialogHeader>
+            {preview && (
+              <>
+                <QRCodeCanvas
+                  value={preview.url}
+                  size={288}
+                  level="H"
+                  marginSize={4}
+                  title="Table QR code"
+                  className="mx-auto rounded-xl bg-white p-3"
+                />
+                <Button
+                  className="w-full"
+                  onClick={() => window.electronAPI.openExternal(preview.url)}
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Open customer ordering page
+                </Button>
+              </>
+            )}
           </DialogContent>
         </Dialog>
       </div>

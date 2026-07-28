@@ -1,4 +1,4 @@
-export interface ApiMeta {
+export interface PaginationMeta {
   total: number
   page: number
   limit: number
@@ -7,11 +7,19 @@ export interface ApiMeta {
   hasPrevPage: boolean
 }
 
+/** @deprecated Use PaginationMeta. */
+export type ApiMeta = PaginationMeta
+
 export interface ApiResponse<T> {
   success: boolean
   message: string
   data: T
-  meta?: ApiMeta
+  meta?: PaginationMeta
+}
+
+export interface PaginatedResponse<T> {
+  data: T[]
+  meta: PaginationMeta
 }
 
 export interface ApiErrorBody {

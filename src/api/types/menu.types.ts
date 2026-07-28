@@ -1,3 +1,5 @@
+import type { ModifierGroup } from './catalog.types'
+
 export interface Category {
   id: string
   name: string
@@ -33,6 +35,7 @@ export interface MenuItem {
   imageUrl: string | null
   available: boolean
   popular: boolean
+  modifierGroups: ModifierGroup[]
 }
 
 export interface CreateMenuItemBody {

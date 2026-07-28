@@ -1,5 +1,6 @@
 import apiClient, { unwrap } from './client'
 import type { ApiResponse } from './types/common'
+import type { TenantSubscription } from './types/billing.types'
 
 type Entity = Record<string, unknown>
 
@@ -50,7 +51,7 @@ export const syncApi = {
 }
 
 export const billingApi = {
-  subscription: () => get('/billing/subscription'),
+  subscription: () => get<TenantSubscription>('/billing/subscription'),
   generateInvoice: () => create('/billing/invoices/generate', {}),
   checkout: (provider: 'razorpay' | 'stripe') => create('/billing/checkout', { provider }),
 }

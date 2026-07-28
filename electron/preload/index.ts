@@ -9,15 +9,15 @@ const electronAPI = {
   }): Promise<unknown> => ipcRenderer.invoke('dinehub:request', request),
   hasSession: (): Promise<boolean> => ipcRenderer.invoke('auth:hasSession'),
   menuImages: {
-    select: (): Promise<{
+    select: (kind: 'category' | 'item' | 'combo' = 'item'): Promise<{
       name: string
       mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
       size: number
       base64: string
       previewUrl: string
-    } | null> => ipcRenderer.invoke('menu:selectImage'),
+    } | null> => ipcRenderer.invoke('menu:selectImage', kind),
     upload: async (
-      kind: 'category' | 'item',
+      kind: 'category' | 'item' | 'combo',
       file: { name: string; mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'; size: number; base64: string },
       onProgress: (progress: number) => void
     ): Promise<unknown> => {
@@ -53,6 +53,8 @@ const electronAPI = {
   getAppVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('app:openExternal', url),
   printReceipt: (html: string): Promise<void> => ipcRenderer.invoke('print:receiptHtml', html),
+  saveFile: (file: { filename: string; content: string }): Promise<{ saved: boolean; path?: string }> =>
+    ipcRenderer.invoke('file:saveText', file),
 
   // Extended APIs (backward compat)
   window: {

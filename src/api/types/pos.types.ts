@@ -50,6 +50,7 @@ export interface MenuItemDto {
   imageUrl?: string | null
   available: boolean
   popular: boolean
+  modifierGroups: import('./catalog.types').ModifierGroup[]
 }
 
 export interface TableDto {
@@ -78,9 +79,11 @@ export interface CreateTableRequest {
 
 export interface OrderItemRequest {
   menuItemId?: string
-  name: string
+  comboId?: string
+  modifierOptionIds?: string[]
+  name?: string
   quantity: number
-  unitPrice: number
+  unitPrice?: number
   notes?: string
 }
 
@@ -133,11 +136,19 @@ export interface PosOrder {
   items: Array<{
     id: string
     menuItemId?: string | null
+    comboId?: string | null
     name: string
     quantity: number
     price: number
     total: number
     notes?: string | null
+    modifiers: Array<{
+      id: string
+      groupId: string
+      groupName: string
+      name: string
+      price: number
+    }>
   }>
   createdAt: string
   updatedAt: string

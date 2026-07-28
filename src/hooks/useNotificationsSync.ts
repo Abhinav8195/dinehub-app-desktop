@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useDispatch } from 'react-redux'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { notificationsApi, type NotificationItem } from '@/api/notifications.api'
 import { setNotifications, addNotification } from '@/store/slices/notificationsSlice'
 import { getSocket } from '@/lib/socket'
@@ -65,10 +66,29 @@ export function useNotificationsSync(enabled: boolean) {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
     }
 
+    const onWaiterRequested = (payload: {
+      request?: { type?: string; message?: string; tableId?: string }
+    }) => {
+      queryClient.invalidateQueries({ queryKey: ['waiter-requests'] })
+      const type = payload.request?.type?.replace(/_/g, ' ') ?? 'WAITER'
+      const message = payload.request?.message || 'A table requested assistance'
+      toast.warning(`${type}: ${message}`)
+      window.electronAPI.notify.show(`New ${type.toLowerCase()} request`, message).catch(() => {})
+    }
+
+    const onWaiterUpdated = () => {
+      queryClient.invalidateQueries({ queryKey: ['waiter-requests'] })
+    }
+
     socket.on('notification', onNotification)
     socket.on('new_order', onOrder)
+    socket.on('qr-order.created', onOrder)
     socket.on('order_status_updated', onOrder)
     socket.on('kitchen_order_updated', onOrder)
+    socket.on('waiter.requested', onWaiterRequested)
+    socket.on('waiter.acknowledged', onWaiterUpdated)
+    socket.on('waiter.completed', onWaiterUpdated)
+    socket.on('waiter.cancelled', onWaiterUpdated)
     socket.on('table_status_updated', () => {
       queryClient.invalidateQueries({ queryKey: ['tables'] })
     })
@@ -79,8 +99,13 @@ export function useNotificationsSync(enabled: boolean) {
     return () => {
       socket.off('notification', onNotification)
       socket.off('new_order', onOrder)
+      socket.off('qr-order.created', onOrder)
       socket.off('order_status_updated', onOrder)
       socket.off('kitchen_order_updated', onOrder)
+      socket.off('waiter.requested', onWaiterRequested)
+      socket.off('waiter.acknowledged', onWaiterUpdated)
+      socket.off('waiter.completed', onWaiterUpdated)
+      socket.off('waiter.cancelled', onWaiterUpdated)
       socket.off('table_status_updated')
       socket.off('low_stock_alert')
     }

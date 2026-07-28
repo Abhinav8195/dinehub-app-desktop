@@ -6,7 +6,9 @@ const SOCKET_URL = process.env.DINEHUB_SOCKET_URL || import.meta.env.MAIN_VITE_S
 const FORWARDED_EVENTS = [
   'new_order', 'order_updated', 'order_status_updated', 'new_kitchen_order',
   'kitchen_order_updated', 'table_updated', 'table_status_updated',
-  'waiter_call_alert', 'low_stock_alert', 'notification'
+  'waiter_call_alert', 'waiter.requested', 'waiter.acknowledged',
+  'waiter.completed', 'waiter.cancelled', 'qr-order.created',
+  'low_stock_alert', 'notification'
 ] as const
 let socket: Socket | null = null
 

@@ -7,11 +7,22 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { NAVIGATION, QUICK_ACTIONS, APP_BASE } from '@/constants/navigation'
 import { setCommandPaletteOpen } from '@/store/slices/appSlice'
 import type { RootState } from '@/store'
+import { useEntitlements } from '@/hooks/useEntitlements'
+import { usePermissions } from '@/hooks/usePermissions'
+import { canAccessNav } from '@/lib/permissions'
+import { filterNavigation } from '@/lib/navigation-access'
 
 export function CommandPalette() {
   const navigate = useNavigate()
   const dispatch = useDispatch()
   const open = useSelector((s: RootState) => s.app.commandPaletteOpen)
+  const { hasFeature } = useEntitlements()
+  const { permissions, roles, isSuperAdmin } = usePermissions()
+  const visibleNavigation = filterNavigation(NAVIGATION, {
+    canPermission: (item) => canAccessNav(item.permission, permissions, roles, isSuperAdmin, item.superAdminOnly),
+    hasFeature
+  })
+  const visibleActions = QUICK_ACTIONS.filter((action) => hasFeature(action.feature))
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -45,7 +56,7 @@ export function CommandPalette() {
           <Command.List className="max-h-[300px] overflow-y-auto p-2">
             <Command.Empty>No results found.</Command.Empty>
             <Command.Group heading="Quick Actions">
-              {QUICK_ACTIONS.map((action) => (
+              {visibleActions.map((action) => (
                 <Command.Item key={action.id} onSelect={() => run(action.href)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm cursor-pointer aria-selected:bg-accent">
                   <ShoppingCart className="h-4 w-4 text-muted-foreground" />
                   {action.title}
@@ -54,7 +65,7 @@ export function CommandPalette() {
               ))}
             </Command.Group>
             <Command.Group heading="Pages">
-              {NAVIGATION.map((item) => (
+              {visibleNavigation.map((item) => (
                 <Command.Item key={item.id} onSelect={() => run(item.href)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm cursor-pointer aria-selected:bg-accent">
                   <item.icon className="h-4 w-4 text-muted-foreground" />
                   {item.title}

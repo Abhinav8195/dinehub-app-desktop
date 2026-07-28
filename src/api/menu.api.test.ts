@@ -42,7 +42,7 @@ describe('menu services', () => {
     requestDineHub.mockResolvedValueOnce(ok([item])).mockResolvedValueOnce(ok(item))
       .mockResolvedValueOnce(ok(item)).mockResolvedValueOnce(ok({ ...item, available: false, popular: true }))
       .mockResolvedValueOnce(ok(null))
-    await expect(menuItemService.list('c1', true)).resolves.toEqual([item])
+    await expect(menuItemService.list('c1', true)).resolves.toEqual([{ ...item, modifierGroups: [] }])
     await menuItemService.get('i1')
     await menuItemService.create({ categoryId: 'c1', name: 'Margherita', price: 12, isAvailable: true, isPopular: false })
     const updated = await menuItemService.update('i1', { isAvailable: false, isPopular: true })

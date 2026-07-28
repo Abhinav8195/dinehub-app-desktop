@@ -13,6 +13,8 @@ import { toggleSidebar, toggleFavorite } from '@/store/slices/appSlice'
 import { useAuth } from '@/hooks/useAuth'
 import { usePermissions } from '@/hooks/usePermissions'
 import { canAccessNav } from '@/lib/permissions'
+import { filterNavigation } from '@/lib/navigation-access'
+import { useEntitlements } from '@/hooks/useEntitlements'
 import { cn } from '@/lib/utils'
 import type { RootState } from '@/store'
 
@@ -22,6 +24,7 @@ export function Sidebar() {
   const { sidebarCollapsed, favorites, pinnedMenus } = useSelector((s: RootState) => s.app)
   const { user } = useAuth()
   const { permissions, roles, isSuperAdmin } = usePermissions()
+  const { hasFeature } = useEntitlements()
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string[]>(['menu', 'inventory', 'users'])
 
@@ -29,7 +32,7 @@ export function Sidebar() {
     canAccessNav(item.permission, permissions, roles, isSuperAdmin, item.superAdminOnly)
 
   const filterBySearch = (items: NavItem[]) => {
-    const visible = items.filter(canSee)
+    const visible = filterNavigation(items, { canPermission: canSee, hasFeature })
     if (!search) return visible
     return visible.filter((item) =>
       item.title.toLowerCase().includes(search.toLowerCase()) ||

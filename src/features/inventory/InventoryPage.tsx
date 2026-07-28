@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ColumnDef } from '@tanstack/react-table'
 import {
   Plus, Download, Package, AlertTriangle, Warehouse, ArrowRightLeft,
-  BarChart3, QrCode, ClipboardList, Search
+  BarChart3, QrCode, ClipboardList, Search, Pencil, Trash2, Eye
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -20,15 +20,23 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Progress } from '@/components/ui/progress'
+import { Switch } from '@/components/ui/switch'
 import { APP_BASE } from '@/constants/navigation'
 import { inventoryApi } from '@/api/inventory.api'
+import { mapBackendError } from '@/api/management-utils'
 import { formatCurrency } from '@/lib/utils'
+import { FeatureGate } from '@/guards/FeatureGate'
 
 interface WarehouseDto {
   id: string
   name: string
+  code: string
   location?: string | null
-  isDefault?: boolean
+  description?: string | null
+  isDefault: boolean
+  isActive: boolean
+  itemCount?: number
+  stockValue?: number
 }
 
 interface InventoryItemDto {
@@ -90,6 +98,13 @@ export default function InventoryPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
   const [adjustOpen, setAdjustOpen] = useState(false)
+  const [warehouseOpen, setWarehouseOpen] = useState(false)
+  const [warehouseDetails, setWarehouseDetails] = useState<WarehouseDto | null>(null)
+  const [warehouseToDelete, setWarehouseToDelete] = useState<WarehouseDto | null>(null)
+  const [editingWarehouseId, setEditingWarehouseId] = useState<string | null>(null)
+  const [warehouseForm, setWarehouseForm] = useState({
+    name: '', code: '', location: '', description: '', isDefault: false, isActive: true,
+  })
   const [adjustForm, setAdjustForm] = useState({ id: '', name: '', quantity: 0, notes: '' })
   const [transferForm, setTransferForm] = useState({ inventoryItemId: '', fromWarehouseId: '', toWarehouseId: '', quantity: 1, notes: '' })
   const [form, setForm] = useState({
@@ -104,7 +119,11 @@ export default function InventoryPage() {
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ['inventory', 'items', location.pathname],
-    queryFn: () => inventoryApi.listItems(false, location.pathname.endsWith('/materials') ? 'RAW' : location.pathname.endsWith('/goods') ? 'FINISHED' : undefined) as Promise<InventoryItemDto[]>,
+    queryFn: async () => (await inventoryApi.listItems({
+      ...(location.pathname.endsWith('/materials') ? { itemType: 'RAW' } : {}),
+      ...(location.pathname.endsWith('/goods') ? { itemType: 'FINISHED' } : {}),
+      limit: 100,
+    })).data as InventoryItemDto[],
   })
 
   const { data: warehouses = [] } = useQuery({
@@ -114,7 +133,10 @@ export default function InventoryPage() {
 
   const { data: logs = [] } = useQuery({
     queryKey: ['inventory', 'logs'],
-    queryFn: () => inventoryApi.listLogs() as Promise<InventoryLogDto[]>,
+    queryFn: async () => (await inventoryApi.listLogs({ limit: 100 })).data.map((log): InventoryLogDto => ({
+      id: log.id, type: log.type, quantity: log.quantityChange, notes: log.notes,
+      createdAt: log.createdAt, inventoryItem: log.inventoryItem,
+    })),
   })
 
   const createItem = useMutation({
@@ -124,9 +146,11 @@ export default function InventoryPage() {
         sku: form.sku,
         unit: form.unit,
         minStock: form.minStock,
+        openingQuantity: 0,
         warehouseId: form.warehouseId,
         costPerUnit: form.costPerUnit,
-        itemType: form.itemType,
+        itemType: form.itemType as 'RAW' | 'FINISHED',
+        isActive: true,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] })
@@ -136,13 +160,61 @@ export default function InventoryPage() {
     },
     onError: () => toast.error('Failed to add item'),
   })
+  const saveWarehouse = useMutation({
+    mutationFn: () => {
+      const body = {
+        name: warehouseForm.name.trim(), code: warehouseForm.code.trim().toUpperCase(),
+        location: warehouseForm.location.trim() || null, description: warehouseForm.description.trim() || null,
+        isDefault: warehouseForm.isDefault, isActive: warehouseForm.isActive,
+      }
+      return editingWarehouseId
+        ? inventoryApi.updateWarehouse(editingWarehouseId, body)
+        : inventoryApi.createWarehouse(body)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      toast.success(editingWarehouseId ? 'Warehouse updated' : 'Warehouse created')
+      setWarehouseOpen(false)
+    },
+    onError: (error) => toast.error(mapBackendError(error).message),
+  })
+  const toggleWarehouse = useMutation({
+    mutationFn: (warehouse: WarehouseDto) => inventoryApi.updateWarehouse(warehouse.id, { isActive: !warehouse.isActive }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['inventory'] }); toast.success('Warehouse status updated') },
+    onError: (error) => toast.error(mapBackendError(error).message),
+  })
+  const deleteWarehouse = useMutation({
+    mutationFn: (id: string) => inventoryApi.deleteWarehouse(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      toast.success('Warehouse deleted')
+      setWarehouseToDelete(null)
+    },
+    onError: (error) => toast.error(mapBackendError(error).message),
+  })
+
+  const openCreateWarehouse = () => {
+    setEditingWarehouseId(null)
+    setWarehouseForm({ name: '', code: '', location: '', description: '', isDefault: false, isActive: true })
+    setWarehouseOpen(true)
+  }
+  const openEditWarehouse = (warehouse: WarehouseDto) => {
+    setEditingWarehouseId(warehouse.id)
+    setWarehouseForm({
+      name: warehouse.name, code: warehouse.code, location: warehouse.location ?? '',
+      description: warehouse.description ?? '', isDefault: warehouse.isDefault, isActive: warehouse.isActive,
+    })
+    setWarehouseOpen(true)
+  }
   const transferItem = useMutation({
-    mutationFn: inventoryApi.transfer,
+    mutationFn: (body: typeof transferForm) => inventoryApi.createTransfer(body),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['inventory'] }); toast.success('Stock transferred') },
     onError: (error: Error) => toast.error(error.message || 'Failed to transfer stock'),
   })
   const adjustStock = useMutation({
-    mutationFn: () => inventoryApi.adjustStock(adjustForm.id, adjustForm.quantity, adjustForm.notes || undefined),
+    mutationFn: () => inventoryApi.adjustStock(adjustForm.id, {
+      mode: 'SET', quantity: adjustForm.quantity, reason: 'PHYSICAL_COUNT', notes: adjustForm.notes || undefined,
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] })
       toast.success('Stock adjusted')
@@ -153,11 +225,8 @@ export default function InventoryPage() {
   const exportInventory = async () => {
     try {
       const report = await inventoryApi.export()
-      const link = document.createElement('a')
-      link.href = URL.createObjectURL(new Blob([report.content], { type: 'text/csv' }))
-      link.download = report.filename || 'inventory.csv'
-      link.click()
-      URL.revokeObjectURL(link.href)
+      const result = await window.electronAPI.saveFile(report)
+      if (result.saved) toast.success('Inventory export saved')
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Failed to export inventory') }
   }
 
@@ -276,8 +345,8 @@ export default function InventoryPage() {
             <TabsTrigger value="warehouse">Warehouse</TabsTrigger>
             <TabsTrigger value="materials">Raw Materials</TabsTrigger>
             <TabsTrigger value="goods">Finished Goods</TabsTrigger>
-            <TabsTrigger value="transfer">Stock Transfer</TabsTrigger>
-            <TabsTrigger value="purchase">Purchase</TabsTrigger>
+            <FeatureGate feature="stock_transfer"><TabsTrigger value="transfer">Stock Transfer</TabsTrigger></FeatureGate>
+            <FeatureGate feature="purchasing"><TabsTrigger value="purchase">Purchase</TabsTrigger></FeatureGate>
             <TabsTrigger value="logs">Logs</TabsTrigger>
           </TabsList>
 
@@ -355,22 +424,71 @@ export default function InventoryPage() {
           <TabsContent value="goods" className="mt-4"><ItemsTable data={items} /></TabsContent>
 
           <TabsContent value="warehouse" className="mt-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="font-semibold">Warehouses</h2>
+                <p className="text-sm text-muted-foreground">Manage storage locations and their availability.</p>
+              </div>
+              <Button onClick={openCreateWarehouse}><Plus className="h-4 w-4 mr-2" /> Add Warehouse</Button>
+            </div>
+            {!warehouseStats.length && (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <Warehouse className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+                  <p className="font-medium">No warehouses configured</p>
+                  <p className="text-sm text-muted-foreground mt-1 mb-4">Create a warehouse before adding inventory items.</p>
+                  <Button onClick={openCreateWarehouse}>Create warehouse</Button>
+                </CardContent>
+              </Card>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {warehouseStats.map((wh) => (
-                <Card key={wh.id} className="hover:shadow-elevated transition-all">
+                <Card key={wh.id} className={`hover:shadow-elevated transition-all ${!wh.isActive ? 'opacity-70' : ''}`}>
                   <CardContent className="p-5">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                        <Warehouse className="h-6 w-6 text-primary" />
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                          <Warehouse className="h-6 w-6 text-primary" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold">{wh.name}</p>
+                            {wh.isDefault && <Badge variant="secondary">Default</Badge>}
+                          </div>
+                          <p className="text-xs text-muted-foreground">{wh.code} · {wh.location ?? 'No location'}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-semibold">{wh.name}</p>
-                        <p className="text-xs text-muted-foreground">{wh.location ?? '—'}</p>
-                      </div>
+                      <Badge variant={wh.isActive ? 'success' : 'secondary'}>{wh.isActive ? 'Active' : 'Inactive'}</Badge>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
+                    {wh.description && <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{wh.description}</p>}
+                    <div className="grid grid-cols-2 gap-2 text-sm mb-4">
                       <div><p className="text-muted-foreground text-xs">Items</p><p className="font-bold">{wh.itemCount}</p></div>
-                      <div><p className="text-muted-foreground text-xs">Value</p><p className="font-bold">{formatCurrency(wh.value)}</p></div>
+                      <div><p className="text-muted-foreground text-xs">Stock value</p><p className="font-bold">{formatCurrency(wh.value)}</p></div>
+                    </div>
+                    <div className="flex items-center justify-between border-t pt-3">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={wh.isActive}
+                          disabled={toggleWarehouse.isPending || wh.isDefault}
+                          onCheckedChange={() => toggleWarehouse.mutate(wh)}
+                        />
+                        <span className="text-xs text-muted-foreground">{wh.isActive ? 'Enabled' : 'Disabled'}</span>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" title="View details" onClick={() => setWarehouseDetails(wh)}>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" title="Edit warehouse" onClick={() => openEditWarehouse(wh)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost" size="icon" title="Delete warehouse"
+                          className="text-danger" disabled={wh.isDefault}
+                          onClick={() => setWarehouseToDelete(wh)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -378,7 +496,7 @@ export default function InventoryPage() {
             </div>
           </TabsContent>
 
-          <TabsContent value="transfer" className="mt-4">
+          <FeatureGate feature="stock_transfer"><TabsContent value="transfer" className="mt-4">
             <Card>
               <CardContent className="p-8 text-center text-muted-foreground">
                 <ArrowRightLeft className="h-12 w-12 mx-auto mb-3 opacity-40" />
@@ -387,9 +505,9 @@ export default function InventoryPage() {
                 <Button className="mt-4" onClick={() => setTransferOpen(true)} disabled={transferItem.isPending}>Create transfer</Button>
               </CardContent>
             </Card>
-          </TabsContent>
+          </TabsContent></FeatureGate>
 
-          <TabsContent value="purchase" className="mt-4">
+          <FeatureGate feature="purchasing"><TabsContent value="purchase" className="mt-4">
             <Card>
               <CardContent className="p-8 text-center">
                 <Package className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-40" />
@@ -404,7 +522,7 @@ export default function InventoryPage() {
                 <ItemsTable data={lowStock} />
               </div>
             )}
-          </TabsContent>
+          </TabsContent></FeatureGate>
 
           <TabsContent value="logs" className="mt-4">
             <Card>
@@ -441,6 +559,97 @@ export default function InventoryPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        <Dialog open={warehouseOpen} onOpenChange={setWarehouseOpen}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>{editingWarehouseId ? 'Edit Warehouse' : 'Add Warehouse'}</DialogTitle></DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Name *</Label>
+                  <Input value={warehouseForm.name} onChange={(e) => setWarehouseForm({ ...warehouseForm, name: e.target.value })} placeholder="Main Warehouse" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Code *</Label>
+                  <Input
+                    value={warehouseForm.code}
+                    onChange={(e) => setWarehouseForm({ ...warehouseForm, code: e.target.value.toUpperCase() })}
+                    placeholder="MAIN" maxLength={30}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Location</Label>
+                <Input value={warehouseForm.location} onChange={(e) => setWarehouseForm({ ...warehouseForm, location: e.target.value })} placeholder="Ground floor" />
+              </div>
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Input value={warehouseForm.description} onChange={(e) => setWarehouseForm({ ...warehouseForm, description: e.target.value })} placeholder="Primary storage location" />
+              </div>
+              <div className="flex items-center justify-between rounded-xl border p-3">
+                <div><p className="text-sm font-medium">Default warehouse</p><p className="text-xs text-muted-foreground">Used automatically for new stock.</p></div>
+                <Switch checked={warehouseForm.isDefault} onCheckedChange={(isDefault) => setWarehouseForm({ ...warehouseForm, isDefault })} />
+              </div>
+              <div className="flex items-center justify-between rounded-xl border p-3">
+                <div><p className="text-sm font-medium">Active</p><p className="text-xs text-muted-foreground">Allow inventory operations at this location.</p></div>
+                <Switch checked={warehouseForm.isActive} onCheckedChange={(isActive) => setWarehouseForm({ ...warehouseForm, isActive })} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setWarehouseOpen(false)}>Cancel</Button>
+              <Button
+                disabled={!warehouseForm.name.trim() || !warehouseForm.code.trim() || saveWarehouse.isPending}
+                onClick={() => saveWarehouse.mutate()}
+              >
+                {saveWarehouse.isPending ? 'Saving…' : editingWarehouseId ? 'Save changes' : 'Create warehouse'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={Boolean(warehouseDetails)} onOpenChange={(open) => { if (!open) setWarehouseDetails(null) }}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Warehouse Details</DialogTitle></DialogHeader>
+            {warehouseDetails && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center"><Warehouse className="h-6 w-6 text-primary" /></div>
+                  <div><p className="font-semibold">{warehouseDetails.name}</p><p className="text-sm text-muted-foreground">{warehouseDetails.code}</p></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 rounded-xl bg-muted/50 p-4 text-sm">
+                  <div><p className="text-muted-foreground">Location</p><p className="font-medium">{warehouseDetails.location || '—'}</p></div>
+                  <div><p className="text-muted-foreground">Status</p><p className="font-medium">{warehouseDetails.isActive ? 'Active' : 'Inactive'}</p></div>
+                  <div><p className="text-muted-foreground">Items</p><p className="font-medium">{warehouseDetails.itemCount ?? 0}</p></div>
+                  <div><p className="text-muted-foreground">Stock value</p><p className="font-medium">{formatCurrency(warehouseDetails.stockValue ?? warehouseStats.find((w) => w.id === warehouseDetails.id)?.value ?? 0)}</p></div>
+                </div>
+                {warehouseDetails.description && <p className="text-sm text-muted-foreground">{warehouseDetails.description}</p>}
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setWarehouseDetails(null)}>Close</Button>
+              <Button onClick={() => { if (warehouseDetails) openEditWarehouse(warehouseDetails); setWarehouseDetails(null) }}>Edit</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={Boolean(warehouseToDelete)} onOpenChange={(open) => { if (!open) setWarehouseToDelete(null) }}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Delete Warehouse?</DialogTitle></DialogHeader>
+            <div className="text-sm text-muted-foreground space-y-2">
+              <p>This will delete <span className="font-medium text-foreground">{warehouseToDelete?.name}</span>.</p>
+              <p>Deletion will be blocked if inventory items or pending transfers depend on this warehouse.</p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setWarehouseToDelete(null)}>Cancel</Button>
+              <Button
+                variant="destructive" disabled={!warehouseToDelete || deleteWarehouse.isPending}
+                onClick={() => warehouseToDelete && deleteWarehouse.mutate(warehouseToDelete.id)}
+              >
+                {deleteWarehouse.isPending ? 'Deleting…' : 'Delete warehouse'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
           <DialogContent>

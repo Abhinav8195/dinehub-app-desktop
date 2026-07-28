@@ -21,27 +21,48 @@ export function formatPercent(value: number): string {
   return `${sign}${value.toFixed(1)}%`
 }
 
-export function formatDate(date: Date | string): string {
+type DateInput = Date | string | number | null | undefined
+
+function toValidDate(date: DateInput): Date | null {
+  if (date === null || date === undefined || date === '') return null
+
+  const parsed = date instanceof Date ? date : new Date(date)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+export function formatDate(date: DateInput): string {
+  const parsed = toValidDate(date)
+  if (!parsed) return '—'
+
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric'
-  }).format(new Date(date))
+  }).format(parsed)
 }
 
-export function formatTime(date: Date | string): string {
+export function formatTime(date: DateInput): string {
+  const parsed = toValidDate(date)
+  if (!parsed) return '—'
+
   return new Intl.DateTimeFormat('en-US', {
     hour: '2-digit',
     minute: '2-digit'
-  }).format(new Date(date))
+  }).format(parsed)
 }
 
-export function formatDateTime(date: Date | string): string {
-  return `${formatDate(date)} ${formatTime(date)}`
+export function formatDateTime(date: DateInput): string {
+  const parsed = toValidDate(date)
+  if (!parsed) return '—'
+
+  return `${formatDate(parsed)} ${formatTime(parsed)}`
 }
 
-export function formatRelativeTime(date: Date | string): string {
-  const diff = Date.now() - new Date(date).getTime()
+export function formatRelativeTime(date: DateInput): string {
+  const parsed = toValidDate(date)
+  if (!parsed) return '—'
+
+  const diff = Date.now() - parsed.getTime()
   const minutes = Math.floor(diff / 60000)
   if (minutes < 1) return 'Just now'
   if (minutes < 60) return `${minutes} min ago`

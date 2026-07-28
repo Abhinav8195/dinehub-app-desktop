@@ -6,7 +6,6 @@ import { CommandPalette } from './CommandPalette'
 import { LockScreen } from '@/components/auth/LockScreen'
 import { ShiftCloseDialog } from '@/components/auth/ShiftDialog'
 import { OfflineBanner } from '@/components/common/OfflineBanner'
-import { useSessionTimeout } from '@/hooks/useSessionTimeout'
 import { useShiftStore } from '@/store/shiftStore'
 import { useAuth } from '@/hooks/useAuth'
 import { useNotificationsSync } from '@/hooks/useNotificationsSync'
@@ -25,8 +24,6 @@ export function AppLayout() {
   const fetchCurrentShift = useShiftStore((s) => s.fetchCurrentShift)
   const syncLockStatus = useShiftStore((s) => s.syncLockStatus)
   const [shiftClose, setShiftClose] = useState(false)
-
-  useSessionTimeout()
 
   useEffect(() => {
     if (!isAuthenticated) return

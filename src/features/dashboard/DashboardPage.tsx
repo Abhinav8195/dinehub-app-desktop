@@ -20,22 +20,42 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { dashboardApi } from '@/api/dashboard.api'
 import { APP_BASE } from '@/constants/navigation'
 import { formatCurrency } from '@/lib/utils'
+import { PermissionGuard } from '@/guards/PermissionGuard'
+import { FeatureGate } from '@/guards/FeatureGate'
+import { useEntitlements } from '@/hooks/useEntitlements'
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } }
 const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }
 
 export default function DashboardPage() {
+  const entitlements = useEntitlements()
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['dashboard', 'stats'],
     queryFn: () => dashboardApi.getStats(),
     refetchInterval: 30_000,
+    enabled: !entitlements.isLoading && entitlements.hasFeature('dashboard'),
   })
 
   const stats = data?.stats
   const tables = data?.tables
 
+  if (!entitlements.isLoading && !entitlements.hasFeature('dashboard')) {
+    return (
+      <PageShell>
+        <div className="page-container">
+          <PageHeader title="DineHub" description="Choose an available module from the sidebar." />
+          <Card>
+            <CardContent className="p-6 text-sm text-muted-foreground">
+              Dashboard analytics are not included in your current plan.
+            </CardContent>
+          </Card>
+        </div>
+      </PageShell>
+    )
+  }
+
   return (
-    <PageShell isLoading={isLoading}>
+    <PageShell isLoading={isLoading || entitlements.isLoading}>
       <div className="page-container">
         <PageHeader
           title="Dashboard"
@@ -45,8 +65,12 @@ export default function DashboardPage() {
               {isFetching && !isLoading && (
                 <Badge variant="secondary" className="mr-2">Refreshing…</Badge>
               )}
-              <Button variant="outline" asChild><Link to={`${APP_BASE}/reports`}>View Reports</Link></Button>
-              <Button asChild><Link to={`${APP_BASE}/pos`}>Open POS</Link></Button>
+              <PermissionGuard permission="reports.view" feature="reports_export">
+                <Button variant="outline" asChild><Link to={`${APP_BASE}/reports`}>View Reports</Link></Button>
+              </PermissionGuard>
+              <PermissionGuard permission="pos.access" feature="pos">
+                <Button asChild><Link to={`${APP_BASE}/pos`}>Open POS</Link></Button>
+              </PermissionGuard>
             </>
           }
         />
@@ -54,11 +78,11 @@ export default function DashboardPage() {
         <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
           <motion.div variants={item} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             <StatCard title="Today's Revenue" value={stats?.revenue.value ?? 0} change={stats?.revenue.change} format="currency" icon={<DollarSign className="h-5 w-5" />} />
-            <StatCard title="Orders" value={stats?.orders.value ?? 0} change={stats?.orders.change} format="number" icon={<ShoppingBag className="h-5 w-5" />} />
-            <StatCard title="Customers" value={stats?.customers.value ?? 0} change={stats?.customers.change} format="number" icon={<Users className="h-5 w-5" />} />
+            <FeatureGate feature="orders"><StatCard title="Orders" value={stats?.orders.value ?? 0} change={stats?.orders.change} format="number" icon={<ShoppingBag className="h-5 w-5" />} /></FeatureGate>
+            <FeatureGate feature="customers"><StatCard title="Customers" value={stats?.customers.value ?? 0} change={stats?.customers.change} format="number" icon={<Users className="h-5 w-5" />} /></FeatureGate>
             <StatCard title="Avg Order" value={stats?.avgOrder.value ?? 0} change={stats?.avgOrder.change} format="currency" icon={<TrendingUp className="h-5 w-5" />} />
             <StatCard title="Profit" value={stats?.profit.value ?? 0} change={stats?.profit.change} format="currency" icon={<DollarSign className="h-5 w-5" />} />
-            <StatCard title="Expense" value={stats?.expense.value ?? 0} change={stats?.expense.change} format="currency" icon={<Package className="h-5 w-5" />} />
+            <FeatureGate feature="expenses"><StatCard title="Expense" value={stats?.expense.value ?? 0} change={stats?.expense.change} format="currency" icon={<Package className="h-5 w-5" />} /></FeatureGate>
           </motion.div>
 
           <motion.div variants={item} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -86,7 +110,7 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <FeatureGate feature="menu"><Card>
               <CardHeader>
                 <CardTitle className="text-base">Top Selling Items</CardTitle>
               </CardHeader>
@@ -105,11 +129,11 @@ export default function DashboardPage() {
                   <p className="text-sm text-muted-foreground">No sales today yet</p>
                 )}
               </CardContent>
-            </Card>
+            </Card></FeatureGate>
           </motion.div>
 
           <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Card>
+            <FeatureGate feature="tables"><Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
                   <Utensils className="h-4 w-4 text-primary" /> Table Status
@@ -125,9 +149,9 @@ export default function DashboardPage() {
                   <Link to={`${APP_BASE}/tables`}>Manage Tables <ArrowRight className="h-3 w-3 ml-1" /></Link>
                 </Button>
               </CardContent>
-            </Card>
+            </Card></FeatureGate>
 
-            <Card>
+            <FeatureGate feature="kitchen_display"><Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
                   <ChefHat className="h-4 w-4 text-warning" /> Kitchen Queue
@@ -140,9 +164,9 @@ export default function DashboardPage() {
                   <Link to={`${APP_BASE}/kitchen`}>Open Kitchen <ArrowRight className="h-3 w-3 ml-1" /></Link>
                 </Button>
               </CardContent>
-            </Card>
+            </Card></FeatureGate>
 
-            <Card>
+            <FeatureGate feature="reservations"><Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
                   <Package className="h-4 w-4 text-danger" /> Reserved Tables
@@ -152,11 +176,11 @@ export default function DashboardPage() {
                 <div className="text-2xl font-bold mb-1">{tables?.reserved ?? 0}</div>
                 <p className="text-xs text-muted-foreground">Currently reserved</p>
               </CardContent>
-            </Card>
+            </Card></FeatureGate>
           </motion.div>
 
           <motion.div variants={item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
+            <FeatureGate feature="orders"><Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="text-base">Recent Orders</CardTitle>
                 <Button variant="ghost" size="sm" asChild><Link to={`${APP_BASE}/orders`}>View All</Link></Button>
@@ -189,7 +213,7 @@ export default function DashboardPage() {
                   )}
                 </div>
               </CardContent>
-            </Card>
+            </Card></FeatureGate>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">

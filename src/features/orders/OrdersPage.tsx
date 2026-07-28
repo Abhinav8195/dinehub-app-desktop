@@ -14,6 +14,7 @@ import { formatCurrency, formatRelativeTime } from '@/lib/utils'
 import { OrderDetailDialog } from './components/OrderDetailDialog'
 import { reportsApi } from '@/api/reports.api'
 import { toast } from 'sonner'
+import { PermissionGuard } from '@/guards/PermissionGuard'
 
 type OrderRow = {
   id: string
@@ -131,7 +132,9 @@ export default function OrdersPage() {
         <PageHeader title="Orders" description="Manage all restaurant orders across channels" actions={
           <>
             <Button variant="outline" onClick={() => refetch()}><Filter className="h-4 w-4 mr-2" /> Refresh</Button>
-            <Button variant="outline" onClick={exportOrders}><Download className="h-4 w-4 mr-2" /> Export</Button>
+            <PermissionGuard permission="reports.view" feature="reports_export">
+              <Button variant="outline" onClick={exportOrders}><Download className="h-4 w-4 mr-2" /> Export</Button>
+            </PermissionGuard>
           </>
         } />
         <Tabs value={typeFilter} onValueChange={setTypeFilter}>

@@ -1,5 +1,5 @@
 import { ipcMain, BrowserWindow, Notification, app, dialog } from 'electron'
-import { readFile, stat } from 'fs/promises'
+import { readFile, stat, writeFile } from 'fs/promises'
 import { extname, basename } from 'path'
 import Store from 'electron-store'
 import { join } from 'path'
@@ -31,7 +31,17 @@ export function registerIpcHandlers(): void {
     }
   })
   ipcMain.handle('auth:hasSession', () => session.hasSession())
-  ipcMain.handle('menu:selectImage', async () => {
+  ipcMain.handle('file:saveText', async (_, file: { filename: string; content: string }) => {
+    const result = await dialog.showSaveDialog(getMainWindow() ?? undefined, {
+      title: 'Export inventory',
+      defaultPath: basename(file.filename || 'inventory.csv'),
+      filters: [{ name: 'CSV file', extensions: ['csv'] }]
+    })
+    if (result.canceled || !result.filePath) return { saved: false }
+    await writeFile(result.filePath, file.content, 'utf8')
+    return { saved: true, path: result.filePath }
+  })
+  ipcMain.handle('menu:selectImage', async (_, kind: 'category' | 'item' | 'combo' = 'item') => {
     const result = await dialog.showOpenDialog(getMainWindow() ?? undefined, {
       title: 'Select menu image',
       properties: ['openFile'],
@@ -40,7 +50,8 @@ export function registerIpcHandlers(): void {
     if (result.canceled || !result.filePaths[0]) return null
     const filePath = result.filePaths[0]
     const info = await stat(filePath)
-    if (info.size > 5 * 1024 * 1024) throw new Error('Image must be 5 MB or smaller')
+    const maxSizeMb = kind === 'combo' ? 5 : 1
+    if (info.size > maxSizeMb * 1024 * 1024) throw new Error(`Image must be ${maxSizeMb} MB or smaller`)
     const mimeByExtension: Record<string, MenuImageUpload['mimeType']> = {
       '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
       '.webp': 'image/webp', '.gif': 'image/gif'
@@ -58,7 +69,7 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle('menu:uploadImage', async (event, request: {
     requestId: string
-    kind: 'category' | 'item'
+    kind: 'category' | 'item' | 'combo'
     file: MenuImageUpload
   }) => {
     try {

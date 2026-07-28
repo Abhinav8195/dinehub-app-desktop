@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { motion } from 'framer-motion'
-import { Eye, EyeOff, Loader2, Building2 } from 'lucide-react'
+import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,7 +16,6 @@ import { BRAND } from '@/constants/brand'
 import { ApiError } from '@/api/types/common'
 
 const loginSchema = z.object({
-  tenantSlug: z.string().min(1, 'Tenant slug is required'),
   email: z.string().email('Invalid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters')
 })
@@ -34,7 +33,6 @@ export default function LoginPage() {
   const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      tenantSlug: '',
       email: '',
       password: ''
     }
@@ -46,7 +44,7 @@ export default function LoginPage() {
 
   const onSubmit = async (data: LoginForm) => {
     try {
-      await login(data.email, data.password, data.tenantSlug.trim())
+      await login(data.email, data.password)
       toast.success('Welcome back!')
       navigate(from, { replace: true })
     } catch (err) {
@@ -73,15 +71,6 @@ export default function LoginPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="tenantSlug">Restaurant Slug</Label>
-                <div className="relative">
-                  <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input id="tenantSlug" placeholder="your-restaurant" className="pl-9" {...register('tenantSlug')} />
-                </div>
-                {errors.tenantSlug && <p className="text-xs text-danger">{errors.tenantSlug.message}</p>}
-              </div>
-
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input id="email" type="email" placeholder="you@restaurant.com" {...register('email')} />

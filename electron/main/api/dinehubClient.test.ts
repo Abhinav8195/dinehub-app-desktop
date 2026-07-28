@@ -33,6 +33,8 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 describe('main-process DineHub client', () => {
   beforeEach(() => {
+    setTokens.mockClear()
+    clearTokens.mockClear()
     credentials.accessToken = 'access-old'
     credentials.refreshToken = 'refresh-old'
     credentials.tenantSlug = 'pizza-place'
@@ -88,6 +90,20 @@ describe('main-process DineHub client', () => {
     expect(clearTokens).toHaveBeenCalled()
   })
 
+  it('keeps the session when token refresh has a temporary server failure', async () => {
+    vi.mocked(fetch).mockImplementation(async (input) =>
+      String(input).endsWith('/auth/refresh')
+        ? json({ message: 'Service temporarily unavailable' }, 503)
+        : json({ message: 'Expired access token' }, 401)
+    )
+    await expect(requestDineHub({ method: 'GET', path: '/menu/items' })).rejects.toMatchObject({
+      statusCode: 503,
+      message: 'Service temporarily unavailable'
+    })
+    expect(clearTokens).not.toHaveBeenCalled()
+    expect(credentials.refreshToken).toBe('refresh-old')
+  })
+
   it('normalizes validation errors', async () => {
     vi.mocked(fetch).mockResolvedValue(json({
       message: 'Validation failed',
@@ -101,7 +117,7 @@ describe('main-process DineHub client', () => {
     })
   })
 
-  it('uploads menu images as multipart without manually setting Content-Type', async () => {
+  it('uploads menu images through the files endpoint without manually setting Content-Type', async () => {
     vi.mocked(fetch).mockResolvedValue(json({ success: true, data: { imageUrl: '/uploads/menu/pizza.png' } }))
     const progress = vi.fn()
     await uploadMenuImage('item', {
@@ -111,7 +127,7 @@ describe('main-process DineHub client', () => {
       base64: Buffer.from('test').toString('base64')
     }, progress)
     const [url, init] = vi.mocked(fetch).mock.calls[0]
-    expect(String(url)).toContain('/menu/items/upload-image')
+    expect(String(url)).toContain('/files/upload')
     expect(new Headers(init?.headers).has('Content-Type')).toBe(false)
     expect(init?.body).toBeInstanceOf(FormData)
     expect(progress).toHaveBeenLastCalledWith(100)
@@ -121,9 +137,35 @@ describe('main-process DineHub client', () => {
     await expect(uploadMenuImage('category', {
       name: 'large.jpg',
       mimeType: 'image/jpeg',
-      size: 5 * 1024 * 1024 + 1,
+      size: 1024 * 1024 + 1,
       base64: ''
-    }, vi.fn())).rejects.toMatchObject({ message: 'Image must be 5 MB or smaller' })
+    }, vi.fn())).rejects.toMatchObject({ message: 'Image must be 1 MB or smaller' })
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('allows combo images up to 5 MB and normalizes the returned file URL', async () => {
+    vi.mocked(fetch).mockResolvedValue(json({ success: true, data: { url: '/uploads/menu/combo.jpg' } }))
+    const result = await uploadMenuImage('combo', {
+      name: 'combo.jpg',
+      mimeType: 'image/jpeg',
+      size: 2 * 1024 * 1024,
+      base64: Buffer.from('combo').toString('base64')
+    }, vi.fn())
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('/files/upload')
+    expect(new Headers(vi.mocked(fetch).mock.calls[0][1]?.headers).has('Content-Type')).toBe(false)
+    expect(result).toMatchObject({ data: { imageUrl: '/uploads/menu/combo.jpg' } })
+  })
+
+  it('reports a clear error when an upload response has no file URL', async () => {
+    vi.mocked(fetch).mockResolvedValue(json({ success: true, data: {} }))
+    await expect(uploadMenuImage('item', {
+      name: 'pizza.png',
+      mimeType: 'image/png',
+      size: 4,
+      base64: Buffer.from('test').toString('base64')
+    }, vi.fn())).rejects.toMatchObject({
+      statusCode: 502,
+      message: 'The image was uploaded, but the server did not return its URL.'
+    })
   })
 })

@@ -25,7 +25,7 @@ export interface AuthUser {
 export interface LoginRequest {
   email: string
   password: string
-  tenantSlug: string
+  tenantSlug?: string
   deviceName: string
   deviceType: 'electron-desktop'
   deviceId: string

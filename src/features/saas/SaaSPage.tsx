@@ -12,6 +12,9 @@ import { tenantsApi } from '@/api/tenants.api'
 import { billingApi } from '@/api/phase2.api'
 import { formatCurrency } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
+import { FEATURE_LABELS, isSubscriptionActive } from '@/lib/entitlements'
+import type { FeatureKey, TenantSubscription } from '@/api/types/billing.types'
+import type { TenantPlan } from '@/api/types/tenants.types'
 
 export default function SaaSPage() {
   const queryClient = useQueryClient()
@@ -24,13 +27,7 @@ export default function SaaSPage() {
   })
   const { data: subscription } = useQuery({
     queryKey: ['billing', 'subscription'],
-    queryFn: () => billingApi.subscription() as Promise<{
-      status?: string
-      amount?: number
-      currency?: string
-      plan?: { name?: string }
-      invoices?: Array<{ id: string; invoiceNumber: string; amount: number; status: string; dueDate: string }>
-    } | null>,
+    queryFn: billingApi.subscription,
   })
   const { data: plans = [] } = useQuery({
     queryKey: ['tenants', 'plans'],
@@ -53,6 +50,13 @@ export default function SaaSPage() {
 
   const restaurants = tenantsResult?.data ?? []
   const invoices = subscription?.invoices ?? []
+  const typedPlans = plans as TenantPlan[]
+  const currentPlan = subscription?.plan ?? null
+  const availablePlans = typedPlans.filter((plan) =>
+    plan.isActive !== false &&
+    (currentPlan?.id ? plan.id !== currentPlan.id : plan.name !== currentPlan?.name)
+  )
+  const featureLabel = (feature: string) => FEATURE_LABELS[feature as FeatureKey] ?? feature.replaceAll('_', ' ')
 
   return (
     <PageShell>
@@ -111,29 +115,59 @@ export default function SaaSPage() {
           )}
 
           <TabsContent value="plans" className="mt-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(plans as Array<{ id: string; name: string; priceMonthly?: number; price?: number; features?: string[] }>).map((plan) => {
-                const current = subscription?.plan?.name === plan.name
-                return (
-                  <Card key={plan.id} className={current ? 'border-primary shadow-elevated' : ''}>
+            <div className="space-y-6">
+              <section>
+                <h3 className="mb-3 text-base font-semibold">Your plan</h3>
+                {currentPlan ? (
+                  <Card className="border-primary shadow-elevated">
                     <CardHeader>
                       <div className="flex items-center justify-between">
-                        <CardTitle className="text-base">{plan.name}</CardTitle>
-                        {current && <Badge><Crown className="h-3 w-3 mr-1" /> Current</Badge>}
+                        <CardTitle>{currentPlan.name}</CardTitle>
+                        <div className="flex gap-2">
+                          <Badge><Crown className="mr-1 h-3 w-3" /> Current</Badge>
+                          <Badge variant={isSubscriptionActive(subscription as TenantSubscription) ? 'success' : 'destructive'}>
+                            {subscription?.status ?? 'missing'}
+                          </Badge>
+                        </div>
                       </div>
-                      <CardDescription>
-                        <span className="text-2xl font-bold text-foreground">{formatCurrency(Number(plan.priceMonthly ?? plan.price ?? 0))}</span>/month
-                      </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <ul className="space-y-2">
-                        {(plan.features ?? []).map((f) => <li key={f} className="text-sm flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-success" />{f}</li>)}
+                      <h4 className="mb-2 text-sm font-semibold">Your features</h4>
+                      <ul className="grid gap-2 sm:grid-cols-2">
+                        <li className="text-sm">• Unlimited storage</li>
+                        <li className="text-sm">• Unlimited API calls</li>
+                        {(currentPlan.features ?? []).map((feature) => (
+                          <li key={feature} className="text-sm">• {featureLabel(feature)}</li>
+                        ))}
                       </ul>
                     </CardContent>
                   </Card>
-                )
-              })}
-              {!plans.length && <p className="text-sm text-muted-foreground">No plans returned by the API.</p>}
+                ) : (
+                  <Card><CardContent className="p-5 text-sm text-muted-foreground">No active subscription found.</CardContent></Card>
+                )}
+              </section>
+
+              <section>
+                <h3 className="mb-3 text-base font-semibold">Available plans</h3>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  {availablePlans.map((plan) => (
+                    <Card key={plan.id}>
+                      <CardHeader>
+                        <CardTitle className="text-base">{plan.name}</CardTitle>
+                        <CardDescription><span className="text-2xl font-bold text-foreground">{formatCurrency(Number(plan.price))}</span>/{plan.interval}</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ul className="space-y-2">
+                          <li className="text-sm">• Unlimited storage</li>
+                          <li className="text-sm">• Unlimited API calls</li>
+                          {plan.features.map((feature) => <li key={feature} className="text-sm">• {featureLabel(feature)}</li>)}
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  ))}
+                  {!availablePlans.length && <p className="text-sm text-muted-foreground">No other active plans are available.</p>}
+                </div>
+              </section>
             </div>
           </TabsContent>
 
