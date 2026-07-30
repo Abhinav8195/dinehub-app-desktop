@@ -24,7 +24,7 @@ vi.mock('../store/secureStore', () => ({
   clearTokens
 }))
 
-import { requestDineHub, uploadMenuImage } from './dinehubClient'
+import { requestDineHub, requestDineHubTransport, uploadMenuImage } from './dinehubClient'
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -115,6 +115,37 @@ describe('main-process DineHub client', () => {
       message: 'Validation failed',
       errors: { price: ['Price must be at least zero'] }
     })
+  })
+
+  it.each([
+    ['csv', 'text/csv', new TextEncoder().encode('order,total\nA1,100\n')],
+    ['xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', Uint8Array.from([0x50, 0x4b, 3, 4])],
+    ['pdf', 'application/pdf', new TextEncoder().encode('%PDF-1.7')]
+  ])('preserves %s export bytes and response headers', async (_format, contentType, bytes) => {
+    vi.mocked(fetch).mockResolvedValue(new Response(bytes, {
+      status: 200,
+      headers: {
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="report.${_format}"`
+      }
+    }))
+    const result = await requestDineHubTransport({
+      method: 'GET',
+      path: '/reports/export',
+      responseType: 'arraybuffer'
+    })
+    expect(result.status).toBe(200)
+    expect(result.headers['content-type']).toContain(contentType)
+    expect(result.headers['content-disposition']).toContain(`report.${_format}`)
+    expect(Array.from(result.data as Uint8Array)).toEqual(Array.from(bytes))
+  })
+
+  it('rejects arbitrary external URLs', async () => {
+    await expect(requestDineHub({
+      method: 'GET',
+      path: 'https://evil.example/steal'
+    })).rejects.toThrow('Invalid DineHub API path')
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('uploads menu images through the files endpoint without manually setting Content-Type', async () => {

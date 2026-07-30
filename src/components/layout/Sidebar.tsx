@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronDown, ChevronLeft, ChevronRight, Search, Star, Pin } from 'lucide-react'
@@ -9,12 +9,11 @@ import { NAVIGATION, type NavItem } from '@/constants/navigation'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { toggleSidebar, toggleFavorite } from '@/store/slices/appSlice'
-import { useAuth } from '@/hooks/useAuth'
+import { toggleSidebar, toggleFavorite, togglePinnedMenu } from '@/store/slices/appSlice'
 import { usePermissions } from '@/hooks/usePermissions'
 import { canAccessNav } from '@/lib/permissions'
 import { filterNavigation } from '@/lib/navigation-access'
-import { useEntitlements } from '@/hooks/useEntitlements'
+import { useFeatureAccess } from '@/hooks/useFeatureAccess'
 import { cn } from '@/lib/utils'
 import type { RootState } from '@/store'
 
@@ -22,31 +21,49 @@ export function Sidebar() {
   const location = useLocation()
   const dispatch = useDispatch()
   const { sidebarCollapsed, favorites, pinnedMenus } = useSelector((s: RootState) => s.app)
-  const { user } = useAuth()
   const { permissions, roles, isSuperAdmin } = usePermissions()
-  const { hasFeature } = useEntitlements()
+  const { hasFeature } = useFeatureAccess()
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string[]>(['menu', 'inventory', 'users'])
 
   const canSee = (item: NavItem) =>
     canAccessNav(item.permission, permissions, roles, isSuperAdmin, item.superAdminOnly)
 
-  const filterBySearch = (items: NavItem[]) => {
-    const visible = filterNavigation(items, { canPermission: canSee, hasFeature })
-    if (!search) return visible
-    return visible.filter((item) =>
-      item.title.toLowerCase().includes(search.toLowerCase()) ||
-      item.children?.some((c) => c.title.toLowerCase().includes(search.toLowerCase()))
-    )
-  }
+  const allVisible = useMemo(() => {
+    const visible = filterNavigation(NAVIGATION, { canPermission: canSee, hasFeature })
+    const query = search.trim().toLowerCase()
+    if (!query) return visible
 
-  const allVisible = filterBySearch(NAVIGATION)
+    return visible.flatMap((item) => {
+      if (item.title.toLowerCase().includes(query)) return [item]
+      const matchingChildren = item.children?.filter((child) => child.title.toLowerCase().includes(query))
+      return matchingChildren?.length ? [{ ...item, children: matchingChildren }] : []
+    })
+  }, [search, permissions, roles, isSuperAdmin, hasFeature])
   const pinnedIds = new Set(pinnedMenus)
   const favoriteIds = new Set(favorites)
 
   const pinnedItems = allVisible.filter((item) => pinnedIds.has(item.id))
   const favoriteItems = allVisible.filter((item) => favoriteIds.has(item.id) && !pinnedIds.has(item.id))
   const mainItems = allVisible.filter((item) => !pinnedIds.has(item.id) && !favoriteIds.has(item.id))
+  const collapsedItems = allVisible
+
+  useEffect(() => {
+    const activeParent = allVisible.find((item) =>
+      item.children?.some((child) =>
+        location.pathname === child.href || location.pathname.startsWith(child.href + '/')
+      )
+    )
+    if (activeParent) {
+      setExpanded((current) => current.includes(activeParent.id) ? current : [...current, activeParent.id])
+    }
+  }, [location.pathname])
+
+  useEffect(() => {
+    if (!search.trim()) return
+    const parentIds = allVisible.filter((item) => item.children?.length).map((item) => item.id)
+    setExpanded((current) => Array.from(new Set([...current, ...parentIds])))
+  }, [search])
 
   const toggleExpand = (id: string) => {
     setExpanded((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
@@ -96,13 +113,28 @@ export function Sidebar() {
         {linkEl}
         {!sidebarCollapsed && (
           <div className="flex shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              type="button"
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); dispatch(toggleFavorite(item.id)) }}
-              className="p-1 rounded hover:bg-sidebar-accent"
-            >
-              <Star className={cn('h-3.5 w-3.5', favorites.includes(item.id) ? 'fill-warning text-warning' : 'text-muted-foreground')} />
-            </button>
+            {depth === 0 && (
+              <>
+                <button
+                  type="button"
+                  aria-label={pinnedMenus.includes(item.id) ? `Unpin ${item.title}` : `Pin ${item.title}`}
+                  title={pinnedMenus.includes(item.id) ? 'Unpin' : 'Pin'}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); dispatch(togglePinnedMenu(item.id)) }}
+                  className="p-1 rounded hover:bg-sidebar-accent"
+                >
+                  <Pin className={cn('h-3.5 w-3.5', pinnedMenus.includes(item.id) ? 'fill-primary text-primary' : 'text-muted-foreground')} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={favorites.includes(item.id) ? `Remove ${item.title} from favorites` : `Add ${item.title} to favorites`}
+                  title={favorites.includes(item.id) ? 'Remove from favorites' : 'Add to favorites'}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); dispatch(toggleFavorite(item.id)) }}
+                  className="p-1 rounded hover:bg-sidebar-accent"
+                >
+                  <Star className={cn('h-3.5 w-3.5', favorites.includes(item.id) ? 'fill-warning text-warning' : 'text-muted-foreground')} />
+                </button>
+              </>
+            )}
             {hasChildren && visibleChildren.length > 0 && (
               <button type="button" onClick={() => toggleExpand(item.id)} className="p-1 rounded hover:bg-sidebar-accent">
                 <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', isExpanded && 'rotate-180')} />
@@ -192,8 +224,15 @@ export function Sidebar() {
               {!sidebarCollapsed && (
                 <p className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Main Menu</p>
               )}
-              <div className="space-y-0.5">{mainItems.map((item) => renderNavItem(item))}</div>
+              <div className="space-y-0.5">
+                {(sidebarCollapsed ? collapsedItems : mainItems).map((item) => renderNavItem(item))}
+              </div>
             </section>
+            {!sidebarCollapsed && search.trim() && allVisible.length === 0 && (
+              <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+                No menu items match “{search.trim()}”.
+              </p>
+            )}
           </div>
         </ScrollArea>
 
@@ -202,6 +241,8 @@ export function Sidebar() {
           <div className="p-3">
           <button
             type="button"
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             onClick={() => dispatch(toggleSidebar())}
             className="flex w-full items-center justify-center rounded-xl p-2 hover:bg-sidebar-accent transition-colors"
           >

@@ -4,7 +4,7 @@ import {
   CalendarDays, BarChart3, Megaphone, Calculator, Settings, Building2,
   Bell, LineChart, Shield, Monitor, type LucideIcon
 } from 'lucide-react'
-import type { FeatureKey } from '@/api/types/billing.types'
+import type { RestaurantFeature } from '@/types/restaurant-features'
 
 export interface NavItem {
   id: string
@@ -13,7 +13,7 @@ export interface NavItem {
   icon: LucideIcon
   badge?: string | number
   permission?: string
-  feature?: FeatureKey
+  feature: RestaurantFeature
   superAdminOnly?: boolean
   children?: NavItem[]
   favorite?: boolean
@@ -31,7 +31,7 @@ export const NAVIGATION: NavItem[] = [
     href: APP_BASE,
     icon: LayoutDashboard,
     permission: 'dashboard.view',
-    feature: 'dashboard',
+    feature: 'DASHBOARD',
     pinned: true
   },
   {
@@ -40,7 +40,7 @@ export const NAVIGATION: NavItem[] = [
     href: p('/pos'),
     icon: ShoppingCart,
     permission: 'pos.access',
-    feature: 'pos',
+    feature: 'POS',
     pinned: true,
     badge: 'Live'
   },
@@ -50,7 +50,7 @@ export const NAVIGATION: NavItem[] = [
     href: p('/orders'),
     icon: ClipboardList,
     permission: 'orders.view',
-    feature: 'orders',
+    feature: 'ORDERS',
     badge: 12
   },
   {
@@ -59,7 +59,7 @@ export const NAVIGATION: NavItem[] = [
     href: p('/tables'),
     icon: Grid3X3,
     permission: 'tables.view'
-    , feature: 'tables'
+    , feature: 'TABLE_MANAGEMENT'
   },
   {
     id: 'qr-ordering',
@@ -67,7 +67,7 @@ export const NAVIGATION: NavItem[] = [
     href: p('/qr-ordering'),
     icon: QrCode,
     permission: 'qr.view'
-    , feature: 'qr_ordering'
+    , feature: 'QR_ORDERING'
   },
   {
     id: 'kitchen',
@@ -75,7 +75,7 @@ export const NAVIGATION: NavItem[] = [
     href: p('/kitchen'),
     icon: ChefHat,
     permission: 'kitchen.view',
-    feature: 'kitchen_display',
+    feature: 'KOT_KITCHEN',
     badge: 8
   },
   {
@@ -84,12 +84,12 @@ export const NAVIGATION: NavItem[] = [
     href: p('/menu'),
     icon: UtensilsCrossed,
     permission: 'menu.view',
-    feature: 'menu',
+    feature: 'MENU_MANAGEMENT',
     children: [
-      { id: 'menu-categories', title: 'Categories', href: p('/menu/categories'), icon: UtensilsCrossed, permission: 'menu.view' },
-      { id: 'menu-items', title: 'Menu Items', href: p('/menu/items'), icon: UtensilsCrossed, permission: 'menu.view' },
-      { id: 'menu-modifiers', title: 'Modifiers', href: p('/menu/modifiers'), icon: UtensilsCrossed, permission: 'menu.view' },
-      { id: 'menu-combos', title: 'Combos', href: p('/menu/combos'), icon: UtensilsCrossed, permission: 'menu.view' }
+      { id: 'menu-categories', title: 'Categories', href: p('/menu/categories'), icon: UtensilsCrossed, permission: 'menu.view', feature: 'MENU_CATEGORIES' },
+      { id: 'menu-items', title: 'Menu Items', href: p('/menu/items'), icon: UtensilsCrossed, permission: 'menu.view', feature: 'MENU_ITEMS' },
+      { id: 'menu-modifiers', title: 'Modifiers', href: p('/menu/modifiers'), icon: UtensilsCrossed, permission: 'menu.view', feature: 'MODIFIERS' },
+      { id: 'menu-combos', title: 'Combos', href: p('/menu/combos'), icon: UtensilsCrossed, permission: 'menu.view', feature: 'COMBOS' }
     ]
   },
   {
@@ -98,19 +98,19 @@ export const NAVIGATION: NavItem[] = [
     href: p('/inventory'),
     icon: Package,
     permission: 'inventory.view',
-    feature: 'inventory_basic',
+    feature: 'INVENTORY_DASHBOARD',
     badge: 3,
     children: [
-      { id: 'inv-dashboard', title: 'Dashboard', href: p('/inventory'), icon: Package, permission: 'inventory.view' },
-      { id: 'inv-items', title: 'All Items', href: p('/inventory/items'), icon: Package, permission: 'inventory.view' },
-      { id: 'inv-warehouse', title: 'Warehouses', href: p('/inventory/warehouse'), icon: Package, permission: 'inventory.warehouse.manage' },
-      { id: 'inv-materials', title: 'Raw Materials', href: p('/inventory/materials'), icon: Package, permission: 'inventory.view' },
-      { id: 'inv-goods', title: 'Finished Goods', href: p('/inventory/goods'), icon: Package, permission: 'inventory.view' },
-      { id: 'inv-transfer', title: 'Stock Transfer', href: p('/inventory/transfer'), icon: Package, permission: 'inventory.view', feature: 'stock_transfer' },
-      { id: 'inv-suppliers', title: 'Suppliers', href: p('/inventory/suppliers'), icon: Package, permission: 'inventory.purchase.view', feature: 'purchasing' },
-      { id: 'inv-purchase', title: 'Purchase Orders', href: p('/inventory/purchase'), icon: Package, permission: 'inventory.purchase.view', feature: 'purchasing' },
-      { id: 'inv-alerts', title: 'Alerts', href: p('/inventory/alerts'), icon: Bell, permission: 'inventory.view' },
-      { id: 'inv-logs', title: 'Inventory Logs', href: p('/inventory/logs'), icon: Package, permission: 'inventory.view' }
+      { id: 'inv-dashboard', title: 'Dashboard', href: p('/inventory'), icon: Package, permission: 'inventory.view', feature: 'INVENTORY_DASHBOARD' },
+      { id: 'inv-items', title: 'All Items', href: p('/inventory/items'), icon: Package, permission: 'inventory.view', feature: 'INVENTORY_ITEMS' },
+      { id: 'inv-warehouse', title: 'Warehouses', href: p('/inventory/warehouse'), icon: Package, permission: 'inventory.warehouse.manage', feature: 'WAREHOUSES' },
+      { id: 'inv-materials', title: 'Raw Materials', href: p('/inventory/materials'), icon: Package, permission: 'inventory.view', feature: 'RAW_MATERIALS' },
+      { id: 'inv-goods', title: 'Finished Goods', href: p('/inventory/goods'), icon: Package, permission: 'inventory.view', feature: 'FINISHED_GOODS' },
+      { id: 'inv-transfer', title: 'Stock Transfer', href: p('/inventory/transfer'), icon: Package, permission: 'inventory.view', feature: 'STOCK_TRANSFER' },
+      { id: 'inv-suppliers', title: 'Suppliers', href: p('/inventory/suppliers'), icon: Package, permission: 'inventory.purchase.view', feature: 'SUPPLIERS' },
+      { id: 'inv-purchase', title: 'Purchase Orders', href: p('/inventory/purchase'), icon: Package, permission: 'inventory.purchase.view', feature: 'PURCHASE_ORDERS' },
+      { id: 'inv-alerts', title: 'Alerts', href: p('/inventory/alerts'), icon: Bell, permission: 'inventory.view', feature: 'INVENTORY_ALERTS' },
+      { id: 'inv-logs', title: 'Inventory Logs', href: p('/inventory/logs'), icon: Package, permission: 'inventory.view', feature: 'INVENTORY_LOGS' }
     ]
   },
   {
@@ -119,7 +119,7 @@ export const NAVIGATION: NavItem[] = [
     href: p('/purchase'),
     icon: ShoppingBag,
     permission: 'purchase.view'
-    , feature: 'purchasing'
+    , feature: 'PURCHASE'
   },
   {
     id: 'customers',
@@ -127,7 +127,7 @@ export const NAVIGATION: NavItem[] = [
     href: p('/customers'),
     icon: Users,
     permission: 'customers.view'
-    , feature: 'customers'
+    , feature: 'CUSTOMERS'
   },
   {
     id: 'users',
@@ -135,12 +135,13 @@ export const NAVIGATION: NavItem[] = [
     href: p('/users'),
     icon: Users,
     permission: 'users.view',
+    feature: 'USER_MANAGEMENT',
     children: [
-      { id: 'users-all', title: 'All Users', href: p('/users'), icon: Users, permission: 'users.view' },
-      { id: 'users-roles', title: 'Roles & Permissions', href: p('/users/roles'), icon: Shield, permission: 'roles.read', feature: 'custom_roles' },
-      { id: 'users-departments', title: 'Departments', href: p('/users/departments'), icon: UserCog, permission: 'departments.view' },
-      { id: 'users-invites', title: 'Invitations', href: p('/users/invites'), icon: Users, permission: 'users.invites.view', feature: 'employee_invites' },
-      { id: 'users-audit', title: 'Audit Logs', href: p('/users/audit'), icon: ClipboardList, permission: 'audit.view' }
+      { id: 'users-all', title: 'All Users', href: p('/users'), icon: Users, permission: 'users.view', feature: 'USERS' },
+      { id: 'users-roles', title: 'Roles & Permissions', href: p('/users/roles'), icon: Shield, permission: 'roles.read', feature: 'ROLES_PERMISSIONS' },
+      { id: 'users-departments', title: 'Departments', href: p('/users/departments'), icon: UserCog, permission: 'departments.view', feature: 'DEPARTMENTS' },
+      { id: 'users-invites', title: 'Invitations', href: p('/users/invites'), icon: Users, permission: 'users.invites.view', feature: 'INVITATIONS' },
+      { id: 'users-audit', title: 'Audit Logs', href: p('/users/audit'), icon: ClipboardList, permission: 'audit.view', feature: 'AUDIT_LOGS' }
     ]
   },
   {
@@ -149,7 +150,7 @@ export const NAVIGATION: NavItem[] = [
     href: p('/employees'),
     icon: UserCog,
     permission: 'employees.view'
-    , feature: 'shifts'
+    , feature: 'EMPLOYEES'
   },
   {
     id: 'staff',
@@ -157,7 +158,7 @@ export const NAVIGATION: NavItem[] = [
     href: p('/staff'),
     icon: Shield,
     permission: 'staff.view'
-    , feature: 'custom_roles'
+    , feature: 'STAFF_PERMISSIONS'
   },
   {
     id: 'reservations',
@@ -165,7 +166,7 @@ export const NAVIGATION: NavItem[] = [
     href: p('/reservations'),
     icon: CalendarDays,
     permission: 'reservations.view',
-    feature: 'reservations',
+    feature: 'RESERVATIONS',
     badge: 5
   },
   {
@@ -174,7 +175,7 @@ export const NAVIGATION: NavItem[] = [
     href: p('/reports'),
     icon: BarChart3,
     permission: 'reports.view'
-    , feature: 'reports_export'
+    , feature: 'REPORTS'
   },
   {
     id: 'crm',
@@ -182,7 +183,7 @@ export const NAVIGATION: NavItem[] = [
     href: p('/crm'),
     icon: Megaphone,
     permission: 'crm.view'
-    , feature: 'campaigns'
+    , feature: 'CRM'
   },
   {
     id: 'accounting',
@@ -190,7 +191,7 @@ export const NAVIGATION: NavItem[] = [
     href: p('/accounting'),
     icon: Calculator,
     permission: 'accounting.view'
-    , feature: 'accounting'
+    , feature: 'ACCOUNTING'
   },
   {
     id: 'analytics',
@@ -198,7 +199,7 @@ export const NAVIGATION: NavItem[] = [
     href: p('/analytics'),
     icon: LineChart,
     permission: 'analytics.view'
-    , feature: 'analytics'
+    , feature: 'ANALYTICS'
   },
   {
     id: 'notifications',
@@ -206,7 +207,7 @@ export const NAVIGATION: NavItem[] = [
     href: p('/notifications'),
     icon: Bell,
     permission: 'notifications.view',
-    feature: 'notifications',
+    feature: 'NOTIFICATIONS',
     badge: 24
   },
   {
@@ -214,14 +215,16 @@ export const NAVIGATION: NavItem[] = [
     title: 'Subscription & Plans',
     href: p('/saas'),
     icon: Building2,
-    permission: 'settings.view'
+    permission: 'settings.view',
+    feature: 'SUBSCRIPTION_PLANS'
   },
   {
     id: 'saas',
     title: 'SaaS Admin',
     href: p('/admin/tenants'),
     icon: Building2,
-    superAdminOnly: true
+    superAdminOnly: true,
+    feature: 'SAAS_ADMIN'
   },
   {
     id: 'roles',
@@ -229,36 +232,39 @@ export const NAVIGATION: NavItem[] = [
     href: p('/roles'),
     icon: Shield,
     permission: 'roles.manage'
-    , feature: 'custom_roles'
+    , feature: 'ROLES'
   },
   {
     id: 'sessions',
     title: 'Sessions',
     href: p('/sessions'),
     icon: Monitor,
-    permission: 'auth.sessions.read'
+    permission: 'auth.sessions.read',
+    feature: 'SESSIONS'
   },
   {
     id: 'restaurant-settings',
     title: 'Settings',
     href: p('/settings'),
     icon: Settings,
-    permission: 'settings.view'
+    permission: 'settings.view',
+    feature: 'RESTAURANT_SETTINGS'
   },
   {
     id: 'settings',
     title: 'Account',
     href: p('/account'),
-    icon: UserCog
+    icon: UserCog,
+    feature: 'ACCOUNT'
   }
 ]
 
 export const QUICK_ACTIONS = [
-  { id: 'new-order', title: 'New Order', href: p('/pos'), shortcut: 'F1', feature: 'pos' as FeatureKey },
-  { id: 'new-reservation', title: 'New Reservation', href: p('/reservations'), shortcut: 'F2', feature: 'reservations' as FeatureKey },
-  { id: 'add-customer', title: 'Add Customer', href: p('/customers'), shortcut: 'F3', feature: 'customers' as FeatureKey },
-  { id: 'open-kds', title: 'Open Kitchen Display', href: p('/kitchen'), shortcut: 'F4', feature: 'kitchen_display' as FeatureKey },
-  { id: 'reports', title: 'View Reports', href: p('/reports'), shortcut: 'F5', feature: 'reports_export' as FeatureKey }
+  { id: 'new-order', title: 'New Order', href: p('/pos'), shortcut: 'F1', feature: 'POS' as RestaurantFeature },
+  { id: 'new-reservation', title: 'New Reservation', href: p('/reservations'), shortcut: 'F2', feature: 'RESERVATIONS' as RestaurantFeature },
+  { id: 'add-customer', title: 'Add Customer', href: p('/customers'), shortcut: 'F3', feature: 'CUSTOMERS' as RestaurantFeature },
+  { id: 'open-kds', title: 'Open Kitchen Display', href: p('/kitchen'), shortcut: 'F4', feature: 'KOT_KITCHEN' as RestaurantFeature },
+  { id: 'reports', title: 'View Reports', href: p('/reports'), shortcut: 'F5', feature: 'REPORTS' as RestaurantFeature }
 ]
 
 export const LANGUAGES = [

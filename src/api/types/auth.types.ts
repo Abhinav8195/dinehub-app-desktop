@@ -14,12 +14,14 @@ export interface AuthUser {
   avatar?: string | null
   emailVerified: boolean
   isSuperAdmin?: boolean
+  userType?: string
   roles: string[]
   permissions: string[]
   tenantId?: string
   tenantSlug?: string
   hasPin?: boolean
   employeeCode?: string
+  featureFlags?: Array<{ key: string; enabled: boolean; config?: unknown }>
 }
 
 export interface LoginRequest {

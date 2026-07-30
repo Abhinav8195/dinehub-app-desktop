@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { SplashScreen } from '@/components/brand/SplashScreen'
+import { FeatureAccessBoundary } from '@/components/auth/FeatureAccessBoundary'
 
 interface AuthGuardProps {
   children: React.ReactNode
@@ -18,5 +19,5 @@ export function AuthGuard({ children }: AuthGuardProps) {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
-  return <>{children}</>
+  return <FeatureAccessBoundary>{children}</FeatureAccessBoundary>
 }

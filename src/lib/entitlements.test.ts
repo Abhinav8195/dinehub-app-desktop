@@ -11,7 +11,7 @@ const subscription = (status: string, features: string[]): TenantSubscription =>
   plan: { id: 'plan-1', name: 'Backend Plan', features }
 })
 
-const nav = (id: string, feature?: NavItem['feature']): NavItem => ({
+const nav = (id: string, feature: NavItem['feature']): NavItem => ({
   id, title: id, href: `/app/${id}`, icon: LayoutDashboard, feature
 })
 
@@ -24,20 +24,20 @@ describe('plan entitlements', () => {
 
   it('hides unavailable sidebar items', () => {
     const current = subscription('active', ['pos'])
-    const visible = filterNavigation([nav('pos', 'pos'), nav('analytics', 'analytics')], {
+    const visible = filterNavigation([nav('pos', 'POS'), nav('analytics', 'ANALYTICS')], {
       canPermission: () => true,
-      hasFeature: (feature) => hasFeature(current, feature)
+      hasFeature: (feature) => feature === 'POS' && hasFeature(current, 'pos')
     })
     expect(visible.map((item) => item.id)).toEqual(['pos'])
   })
 
   it('redirects direct access to a restricted route', () => {
-    expect(getFeatureRouteDecision(false, false, true, false)).toBe('redirect')
+    expect(getFeatureRouteDecision(false, false, true)).toBe('redirect')
   })
 
   it('allows superadmins to bypass feature and permission restrictions', () => {
     expect(hasFeature(null, 'analytics', true)).toBe(true)
-    expect(getFeatureRouteDecision(false, false, false, true)).toBe('allow')
+    expect(getFeatureRouteDecision(false, true, true)).toBe('allow')
   })
 
   it.each(['expired', 'cancelled', 'canceled'])('denies %s subscriptions', (status) => {

@@ -30,6 +30,12 @@ export const tokenBridge = {
 
 interface BridgeResult {
   ok: boolean
+  response?: {
+    status: number
+    headers: Record<string, string>
+    data: unknown
+  }
+  /** Compatibility with focused renderer tests and pre-upgrade main processes. */
   payload?: unknown
   error?: ApiErrorBody
 }
@@ -39,12 +45,27 @@ const electronAdapter: AxiosAdapter = async (config) => {
   if (!bridge) {
     throw new ApiError({ success: false, statusCode: 0, message: 'DineHub desktop bridge is unavailable' })
   }
-  const rawData = typeof config.data === 'string' ? JSON.parse(config.data) : config.data
+  let rawData = config.data
+  if (typeof config.data === 'string') {
+    try { rawData = JSON.parse(config.data) } catch { rawData = config.data }
+  }
+  const responseType = config.responseType === 'arraybuffer' || config.responseType === 'blob'
+    ? 'arraybuffer'
+    : config.responseType === 'text' ? 'text' : undefined
+  const forwardedHeaders = config.headers ? Object.fromEntries(
+    Object.entries(config.headers).filter(([key, value]) =>
+      typeof value === 'string' &&
+      !['accept', 'content-type'].includes(key.toLowerCase())
+    )
+  ) : undefined
   const result = await bridge.requestDineHub({
     method: (config.method?.toUpperCase() || 'GET') as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: config.url || '/',
     query: config.params as Record<string, string | number | boolean | undefined> | undefined,
-    body: rawData
+    body: rawData,
+    ...(Object.keys(forwardedHeaders ?? {}).length ? { headers: forwardedHeaders } : {}),
+    ...(responseType ? { responseType } : {}),
+    ...(config.timeout && config.timeout !== 30000 ? { timeout: config.timeout } : {})
   }) as BridgeResult
   if (!result.ok) {
     const error = new ApiError({
@@ -57,11 +78,22 @@ const electronAdapter: AxiosAdapter = async (config) => {
     if (error.statusCode === 401) notifyAuthExpired()
     throw error
   }
-  return {
-    data: result.payload,
+  const response = result.response ?? (Object.prototype.hasOwnProperty.call(result, 'payload') ? {
     status: 200,
-    statusText: 'OK',
     headers: {},
+    data: result.payload
+  } : undefined)
+  if (!response) throw new ApiError({ success: false, statusCode: 0, message: 'Invalid response from desktop bridge' })
+  const data = config.responseType === 'blob'
+    ? new Blob([response.data as Uint8Array], { type: response.headers['content-type'] || 'application/octet-stream' })
+    : config.responseType === 'arraybuffer'
+      ? (response.data as Uint8Array).buffer
+      : response.data
+  return {
+    data,
+    status: response.status,
+    statusText: String(response.status),
+    headers: response.headers,
     config
   } satisfies AxiosResponse
 }

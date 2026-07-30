@@ -75,6 +75,7 @@ export interface FeatureFlag {
   key: string
   enabled: boolean
   description?: string
+  config?: unknown
 }
 
 export interface TenantDomain {

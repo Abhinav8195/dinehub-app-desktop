@@ -171,7 +171,7 @@ export default function UsersManagementPage() {
           description="Manage staff accounts, roles, departments, and invitations"
           actions={
             <div className="flex gap-2">
-              <PermissionGuard permission="users.view" feature="employee_invites">
+              <PermissionGuard permission="users.view" feature="INVITATIONS">
                 <Button variant="outline" onClick={() => setInviteOpen(true)}>
                   <Mail className="h-4 w-4 mr-2" /> Invite User
                 </Button>

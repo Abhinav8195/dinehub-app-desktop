@@ -132,7 +132,7 @@ export default function OrdersPage() {
         <PageHeader title="Orders" description="Manage all restaurant orders across channels" actions={
           <>
             <Button variant="outline" onClick={() => refetch()}><Filter className="h-4 w-4 mr-2" /> Refresh</Button>
-            <PermissionGuard permission="reports.view" feature="reports_export">
+            <PermissionGuard permission="reports.view" feature="REPORTS">
               <Button variant="outline" onClick={exportOrders}><Download className="h-4 w-4 mr-2" /> Export</Button>
             </PermissionGuard>
           </>

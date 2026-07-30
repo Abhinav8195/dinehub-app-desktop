@@ -1,12 +1,22 @@
 import { getAccessToken, getRefreshToken, getTenantSlug, setTenantSlug, setTokens, clearTokens } from '../store/secureStore'
 
 export type ApiMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+export type DesktopResponseType = 'json' | 'text' | 'arraybuffer' | 'blob'
 
 export interface ApiRequest {
   method: ApiMethod
   path: string
   query?: Record<string, string | number | boolean | undefined>
   body?: unknown
+  headers?: Record<string, string>
+  responseType?: DesktopResponseType
+  timeout?: number
+}
+
+export interface DesktopApiResponse<T = unknown> {
+  status: number
+  headers: Record<string, string>
+  data: T
 }
 
 export interface ApiFailure {
@@ -60,7 +70,18 @@ function buildUrl(path: string, query?: ApiRequest['query']): string {
   return url.toString()
 }
 
-async function parseResponse(response: Response): Promise<unknown> {
+function responseHeaders(response: Response): Record<string, string> {
+  return Object.fromEntries(response.headers.entries())
+}
+
+async function parseResponse(response: Response, responseType: DesktopResponseType = 'json'): Promise<DesktopApiResponse> {
+  if (response.ok && (responseType === 'arraybuffer' || responseType === 'blob')) {
+    return {
+      status: response.status,
+      headers: responseHeaders(response),
+      data: new Uint8Array(await response.arrayBuffer())
+    }
+  }
   const text = await response.text()
   let payload: Record<string, unknown> | null = null
   if (text) {
@@ -77,7 +98,13 @@ async function parseResponse(response: Response): Promise<unknown> {
       throw failure
     }
   }
-  if (response.ok) return payload
+  if (response.ok) {
+    return {
+      status: response.status,
+      headers: responseHeaders(response),
+      data: responseType === 'text' ? text : payload
+    }
+  }
   const failure: ApiFailure = {
     statusCode: response.status,
     message: typeof payload?.message === 'string' ? payload.message : response.statusText || 'Request failed',
@@ -97,7 +124,8 @@ async function refreshAccessToken(): Promise<string> {
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ refreshToken })
     })
-    const payload = await parseResponse(response) as { data?: { tokens?: { accessToken?: string; refreshToken?: string } } }
+    const result = await parseResponse(response)
+    const payload = result.data as { data?: { tokens?: { accessToken?: string; refreshToken?: string } } }
     const tokens = payload.data?.tokens
     if (!tokens?.accessToken || !tokens.refreshToken) throw { statusCode: 401, message: 'Invalid refresh response' } satisfies ApiFailure
     setTokens({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken })
@@ -116,14 +144,20 @@ async function refreshAccessToken(): Promise<string> {
   }
 }
 
-async function send(request: ApiRequest, accessToken: string | null): Promise<unknown> {
+function requestHeaders(request: ApiRequest, accessToken: string | null): Record<string, string> {
   const tenantSlug = getTenantSlug()
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json'
+    Accept: request.responseType === 'arraybuffer' || request.responseType === 'blob' ? '*/*' : 'application/json',
+    ...request.headers
   }
+  if (!headers['Content-Type']) headers['Content-Type'] = 'application/json'
   if (tenantSlug) headers['X-Tenant-Slug'] = tenantSlug
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+  return headers
+}
+
+async function send(request: ApiRequest, accessToken: string | null): Promise<DesktopApiResponse> {
+  const headers = requestHeaders(request, accessToken)
   const url = buildUrl(request.path, request.query)
   logRequest(request.method, url)
   let response: Response
@@ -131,7 +165,8 @@ async function send(request: ApiRequest, accessToken: string | null): Promise<un
     response = await fetch(url, {
       method: request.method,
       headers,
-      body: request.body === undefined ? undefined : JSON.stringify(request.body)
+      body: request.body === undefined ? undefined : JSON.stringify(request.body),
+      signal: request.timeout ? AbortSignal.timeout(request.timeout) : undefined
     })
     logResponse(request.method, url, response.status)
   } catch (error) {
@@ -142,22 +177,17 @@ async function send(request: ApiRequest, accessToken: string | null): Promise<un
     const freshToken = await refreshAccessToken()
     return sendOnce(request, freshToken)
   }
-  return parseResponse(response)
+  return parseResponse(response, request.responseType)
 }
 
-async function sendOnce(request: ApiRequest, accessToken: string): Promise<unknown> {
-  const tenantSlug = getTenantSlug()
+async function sendOnce(request: ApiRequest, accessToken: string): Promise<DesktopApiResponse> {
   const response = await fetch(buildUrl(request.path, request.query), {
     method: request.method,
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-      ...(tenantSlug ? { 'X-Tenant-Slug': tenantSlug } : {})
-    },
-    body: request.body === undefined ? undefined : JSON.stringify(request.body)
+    headers: requestHeaders(request, accessToken),
+    body: request.body === undefined ? undefined : JSON.stringify(request.body),
+    signal: request.timeout ? AbortSignal.timeout(request.timeout) : undefined
   })
-  return parseResponse(response)
+  return parseResponse(response, request.responseType)
 }
 
 async function sendImageUpload(
@@ -180,7 +210,7 @@ async function sendImageUpload(
     const freshToken = await refreshAccessToken()
     return sendImageUploadOnce(path, file, freshToken, onProgress)
   }
-  const payload = await parseResponse(response)
+  const payload = (await parseResponse(response)).data
   onProgress(100)
   return payload
 }
@@ -203,21 +233,26 @@ async function sendImageUploadOnce(
     },
     body: form
   })
-  const payload = await parseResponse(response)
+  const payload = (await parseResponse(response)).data
   onProgress(100)
   return payload
 }
 
 export async function requestDineHub(request: ApiRequest): Promise<unknown> {
+  return (await requestDineHubTransport(request)).data
+}
+
+export async function requestDineHubTransport(request: ApiRequest): Promise<DesktopApiResponse> {
   assertRequest(request)
   if (request.path === '/auth/login' && request.body && typeof request.body === 'object') {
     const slug = (request.body as { tenantSlug?: unknown }).tenantSlug
     if (typeof slug === 'string' && slug) setTenantSlug(slug)
   }
-  const payload = await send(request, getAccessToken())
+  const result = await send(request, getAccessToken())
+  const payload = result.data
   const tokens = (payload as { data?: { tokens?: { accessToken?: string; refreshToken?: string } } }).data?.tokens
   if (tokens?.accessToken && tokens.refreshToken) setTokens({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken })
-  return payload
+  return result
 }
 
 export async function uploadMenuImage(

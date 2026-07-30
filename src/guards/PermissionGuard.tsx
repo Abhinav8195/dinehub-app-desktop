@@ -1,6 +1,6 @@
 import { usePermissions } from '@/hooks/usePermissions'
-import { useEntitlements } from '@/hooks/useEntitlements'
-import type { FeatureKey } from '@/api/types/billing.types'
+import { useFeatureAccess } from '@/hooks/useFeatureAccess'
+import type { RestaurantFeature } from '@/types/restaurant-features'
 
 interface PermissionGuardProps {
   permission?: string
@@ -8,7 +8,7 @@ interface PermissionGuardProps {
   requireAll?: boolean
   role?: string
   fallback?: React.ReactNode
-  feature?: FeatureKey
+  feature?: RestaurantFeature
   children: React.ReactNode
 }
 
@@ -16,7 +16,7 @@ export function PermissionGuard({
   permission, permissions, requireAll = false, role, feature, fallback = null, children
 }: PermissionGuardProps) {
   const { can, canAny, canAll, hasRole, isSuperAdmin } = usePermissions()
-  const entitlements = useEntitlements()
+  const featureAccess = useFeatureAccess()
 
   if (isSuperAdmin) return <>{children}</>
 
@@ -27,7 +27,7 @@ export function PermissionGuard({
     allowed = requireAll ? canAll(permissions) : canAny(permissions)
   }
   if (role) allowed = allowed && hasRole(role)
-  if (feature) allowed = allowed && !entitlements.isLoading && entitlements.hasFeature(feature)
+  if (feature) allowed = allowed && !featureAccess.isLoading && featureAccess.hasFeature(feature)
 
   return allowed ? <>{children}</> : <>{fallback}</>
 }

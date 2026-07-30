@@ -6,7 +6,7 @@ import { join } from 'path'
 import { autoUpdater } from 'electron-updater'
 import { getMainWindow } from '../window'
 import { registerAuthIpcHandlers } from './auth'
-import { requestDineHub, session, uploadMenuImage, type ApiRequest, type MenuImageUpload } from '../api/dinehubClient'
+import { requestDineHubTransport, session, uploadMenuImage, type ApiRequest, type MenuImageUpload } from '../api/dinehubClient'
 import { connectRealtime, disconnectRealtime } from '../realtime'
 
 const store = new Store()
@@ -16,7 +16,7 @@ export function registerIpcHandlers(): void {
   registerAuthIpcHandlers()
   ipcMain.handle('dinehub:request', async (_, request: ApiRequest) => {
     try {
-      return { ok: true, payload: await requestDineHub(request) }
+      return { ok: true, response: await requestDineHubTransport(request) }
     } catch (error) {
       const failure = error as { statusCode?: number; message?: string; errors?: unknown; path?: string }
       return {
@@ -40,6 +40,22 @@ export function registerIpcHandlers(): void {
     if (result.canceled || !result.filePath) return { saved: false }
     await writeFile(result.filePath, file.content, 'utf8')
     return { saved: true, path: result.filePath }
+  })
+  ipcMain.handle('file:saveBytes', async (_, file: {
+    filename: string
+    bytes: Uint8Array
+    contentType?: string
+  }) => {
+    const safeName = basename(file.filename || 'download')
+    const extension = extname(safeName).replace('.', '').toLowerCase()
+    const result = await dialog.showSaveDialog(getMainWindow() ?? undefined, {
+      title: 'Save export',
+      defaultPath: safeName,
+      filters: extension ? [{ name: file.contentType || 'Export file', extensions: [extension] }] : undefined
+    })
+    if (result.canceled || !result.filePath) return { saved: false as const, cancelled: true as const }
+    await writeFile(result.filePath, Buffer.from(file.bytes))
+    return { saved: true as const, path: result.filePath }
   })
   ipcMain.handle('menu:selectImage', async (_, kind: 'category' | 'item' | 'combo' = 'item') => {
     const result = await dialog.showOpenDialog(getMainWindow() ?? undefined, {

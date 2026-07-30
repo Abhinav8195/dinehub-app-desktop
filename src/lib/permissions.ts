@@ -54,6 +54,9 @@ export function canAccessNav(
   if (!featureAllowed) return false
   if (isOwnerRole(roles)) return true
   if (!permission) return true
-  if (userPermissions.length === 0) return true // show all if API didn't return permissions yet
+  // Keep navigation consistent with authStore.hasPermission(). Some backend
+  // user/profile responses currently omit the expanded permission list; in
+  // that case the authenticated role policy remains authoritative.
+  if (userPermissions.length === 0) return true
   return matchPermission(userPermissions, permission)
 }

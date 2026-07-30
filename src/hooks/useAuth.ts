@@ -10,6 +10,7 @@ export function useAuth() {
   const fetchMe = useAuthStore((s) => s.fetchMe)
   const hasPermission = useAuthStore((s) => s.hasPermission)
   const hasRole = useAuthStore((s) => s.hasRole)
+  const featuresStatus = useAuthStore((s) => s.featuresStatus)
 
-  return { user, isAuthenticated, isLoading, isInitialized, login, logout, fetchMe, hasPermission, hasRole }
+  return { user, isAuthenticated, isLoading, isInitialized, login, logout, fetchMe, hasPermission, hasRole, featuresStatus }
 }

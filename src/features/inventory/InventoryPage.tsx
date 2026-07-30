@@ -345,8 +345,8 @@ export default function InventoryPage() {
             <TabsTrigger value="warehouse">Warehouse</TabsTrigger>
             <TabsTrigger value="materials">Raw Materials</TabsTrigger>
             <TabsTrigger value="goods">Finished Goods</TabsTrigger>
-            <FeatureGate feature="stock_transfer"><TabsTrigger value="transfer">Stock Transfer</TabsTrigger></FeatureGate>
-            <FeatureGate feature="purchasing"><TabsTrigger value="purchase">Purchase</TabsTrigger></FeatureGate>
+            <FeatureGate feature="STOCK_TRANSFER"><TabsTrigger value="transfer">Stock Transfer</TabsTrigger></FeatureGate>
+            <FeatureGate feature="PURCHASE_ORDERS"><TabsTrigger value="purchase">Purchase</TabsTrigger></FeatureGate>
             <TabsTrigger value="logs">Logs</TabsTrigger>
           </TabsList>
 
@@ -496,7 +496,7 @@ export default function InventoryPage() {
             </div>
           </TabsContent>
 
-          <FeatureGate feature="stock_transfer"><TabsContent value="transfer" className="mt-4">
+          <FeatureGate feature="STOCK_TRANSFER"><TabsContent value="transfer" className="mt-4">
             <Card>
               <CardContent className="p-8 text-center text-muted-foreground">
                 <ArrowRightLeft className="h-12 w-12 mx-auto mb-3 opacity-40" />
@@ -507,7 +507,7 @@ export default function InventoryPage() {
             </Card>
           </TabsContent></FeatureGate>
 
-          <FeatureGate feature="purchasing"><TabsContent value="purchase" className="mt-4">
+          <FeatureGate feature="PURCHASE_ORDERS"><TabsContent value="purchase" className="mt-4">
             <Card>
               <CardContent className="p-8 text-center">
                 <Package className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-40" />

@@ -23,16 +23,9 @@ import { formatCurrency } from '@/lib/utils'
 import { calculateTaxBreakdown } from '@/lib/tax'
 import { customersApi } from '@/api/customers.api'
 import { ordersApi } from '@/api/orders.api'
-import { enqueueSync } from '@/lib/offline'
-import type { PosOrder, TaxSettings, TableDto } from '@/api/types/pos.types'
+import type { PosOrder, TaxSettings, TableDto, OrderTotalsPreview } from '@/api/types/pos.types'
 import { ApiError } from '@/api/types/common'
 import type { OrderItem } from '@/types'
-
-const VOUCHERS: Record<string, number> = {
-  WELCOME10: 10,
-  SAVE50: 50,
-  FLAT100: 100,
-}
 
 interface CheckoutModalProps {
   open: boolean
@@ -62,26 +55,40 @@ export function CheckoutModal({
   const [instructions, setInstructions] = useState('')
   const [voucherCode, setVoucherCode] = useState('')
   const [appliedVoucher, setAppliedVoucher] = useState('')
+  const [serverTotals, setServerTotals] = useState<OrderTotalsPreview | null>(null)
+  const [validatingVoucher, setValidatingVoucher] = useState(false)
   const [tableId, setTableId] = useState(selectedTableId || '')
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  const voucherDiscount = appliedVoucher ? (VOUCHERS[appliedVoucher] || 0) : 0
-  const breakdown = calculateTaxBreakdown(subtotal, taxSettings, voucherDiscount)
+  const breakdown = serverTotals ?? calculateTaxBreakdown(subtotal, taxSettings)
 
-  const handleApplyVoucher = () => {
+  const handleApplyVoucher = async () => {
     const code = voucherCode.trim().toUpperCase()
     if (!code) {
       toast.error('Enter a voucher code')
       return
     }
-    if (!VOUCHERS[code]) {
-      toast.error('Invalid voucher code')
-      return
+    setValidatingVoucher(true)
+    try {
+      const preview = await ordersApi.previewTotals(subtotal, code)
+      if (preview.voucherDiscount <= 0) {
+        setAppliedVoucher('')
+        setServerTotals(null)
+        toast.error('This voucher is not valid for the current order')
+        return
+      }
+      setAppliedVoucher(code)
+      setServerTotals(preview)
+      toast.success(`Voucher ${code} applied`)
+    } catch (error) {
+      setAppliedVoucher('')
+      setServerTotals(null)
+      toast.error(error instanceof Error ? error.message : 'Unable to validate voucher')
+    } finally {
+      setValidatingVoucher(false)
     }
-    setAppliedVoucher(code)
-    toast.success(`Voucher ${code} applied`)
   }
 
   const handlePhoneLookup = async () => {
@@ -141,20 +148,7 @@ export function CheckoutModal({
         voucherCode: appliedVoucher || undefined,
         paymentMethod,
       }
-      if (!navigator.onLine) {
-        await enqueueSync({
-          method: 'POST',
-          url: '/orders',
-          resource: 'orders',
-          operation: 'create',
-          body: payload,
-        })
-        onSuccess(`OFFLINE-${Date.now()}`, breakdown.total, paymentMethod)
-        toast.success('Order queued for sync when connection returns')
-        onOpenChange(false)
-        resetForm()
-        return
-      }
+      if (!navigator.onLine) throw new Error('Order creation requires a connection. Your cart has been preserved.')
       const order = await ordersApi.create(payload)
 
       onSuccess(order.orderNumber, order.total, paymentMethod, order)
@@ -179,6 +173,7 @@ export function CheckoutModal({
     setInstructions('')
     setVoucherCode('')
     setAppliedVoucher('')
+    setServerTotals(null)
   }
 
   return (
@@ -236,8 +231,16 @@ export function CheckoutModal({
             <div className="space-y-2">
               <Label>Voucher Code</Label>
               <div className="flex gap-2">
-                <Input value={voucherCode} onChange={(e) => setVoucherCode(e.target.value)} placeholder="WELCOME10, SAVE50, FLAT100" />
-                <Button type="button" variant="destructive" onClick={handleApplyVoucher}>Apply</Button>
+                <Input value={voucherCode} onChange={(e) => {
+                  setVoucherCode(e.target.value)
+                  if (appliedVoucher) {
+                    setAppliedVoucher('')
+                    setServerTotals(null)
+                  }
+                }} placeholder="Enter voucher code" />
+                <Button type="button" variant="destructive" disabled={validatingVoucher} onClick={handleApplyVoucher}>
+                  {validatingVoucher ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Apply'}
+                </Button>
               </div>
             </div>
 

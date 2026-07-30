@@ -12,10 +12,17 @@ export const reportsApi = {
   export: async (format: 'csv' | 'xlsx' | 'pdf', from?: string, to?: string) => {
     const response = await apiClient.get('/reports/export', {
       params: { format, from, to },
-      responseType: 'blob',
+      responseType: 'arraybuffer',
     })
     const disposition = String(response.headers['content-disposition'] ?? '')
-    const filename = disposition.match(/filename="?([^"]+)"?/)?.[1] ?? `sales-report.${format}`
-    return { blob: response.data as Blob, filename }
+    const utf8Name = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+    const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1]
+    const filename = decodeURIComponent(utf8Name ?? plainName ?? `sales-report.${format}`)
+      .replace(/[\\/:\0]/g, '_')
+    return {
+      bytes: new Uint8Array(response.data as ArrayBuffer),
+      filename,
+      contentType: String(response.headers['content-type'] ?? 'application/octet-stream')
+    }
   },
 }

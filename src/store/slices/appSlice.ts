@@ -1,4 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit'
+import { FAVORITES_KEY, PINNED_KEY, RECENT_PAGES_KEY } from '@/constants/navigation'
 
 interface AppState {
   sidebarCollapsed: boolean
@@ -30,6 +31,29 @@ const initialState: AppState = {
   commandPaletteOpen: false
 }
 
+const readStoredIds = (key: string, fallback: string[]) => {
+  if (typeof window === 'undefined') return fallback
+  try {
+    const value = JSON.parse(window.localStorage.getItem(key) ?? 'null')
+    return Array.isArray(value) && value.every((id) => typeof id === 'string') ? value : fallback
+  } catch {
+    return fallback
+  }
+}
+
+initialState.favorites = readStoredIds(FAVORITES_KEY, initialState.favorites)
+initialState.pinnedMenus = readStoredIds(PINNED_KEY, initialState.pinnedMenus)
+initialState.recentPages = readStoredIds(RECENT_PAGES_KEY, initialState.recentPages)
+
+const storeIds = (key: string, ids: string[]) => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(key, JSON.stringify(ids))
+  } catch {
+    // Keep the Redux state usable when storage is unavailable.
+  }
+}
+
 const appSlice = createSlice({
   name: 'app',
   initialState,
@@ -44,12 +68,21 @@ const appSlice = createSlice({
     setOnlineStatus: (state, action: PayloadAction<boolean>) => { state.isOnline = action.payload },
     addRecentPage: (state, action: PayloadAction<string>) => {
       state.recentPages = [action.payload, ...state.recentPages.filter((p) => p !== action.payload)].slice(0, 10)
+      storeIds(RECENT_PAGES_KEY, state.recentPages)
     },
     toggleFavorite: (state, action: PayloadAction<string>) => {
       const id = action.payload
       state.favorites = state.favorites.includes(id)
         ? state.favorites.filter((f) => f !== id)
         : [...state.favorites, id]
+      storeIds(FAVORITES_KEY, state.favorites)
+    },
+    togglePinnedMenu: (state, action: PayloadAction<string>) => {
+      const id = action.payload
+      state.pinnedMenus = state.pinnedMenus.includes(id)
+        ? state.pinnedMenus.filter((item) => item !== id)
+        : [...state.pinnedMenus, id]
+      storeIds(PINNED_KEY, state.pinnedMenus)
     },
     setCommandPaletteOpen: (state, action: PayloadAction<boolean>) => { state.commandPaletteOpen = action.payload }
   }
@@ -58,6 +91,6 @@ const appSlice = createSlice({
 export const {
   toggleSidebar, setSidebarCollapsed, toggleDarkMode, setDarkMode,
   setRestaurant, setBranch, setLanguage, setOnlineStatus,
-  addRecentPage, toggleFavorite, setCommandPaletteOpen
+  addRecentPage, toggleFavorite, togglePinnedMenu, setCommandPaletteOpen
 } = appSlice.actions
 export default appSlice.reducer

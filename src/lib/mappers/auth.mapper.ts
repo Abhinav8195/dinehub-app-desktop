@@ -25,6 +25,7 @@ type BackendUser = {
   roles: string[]
   permissions: string[]
   tenantSlug?: string
+  featureFlags?: Array<{ key: string; enabled: boolean; config?: unknown }>
 }
 
 type BackendRolePermission = {
@@ -57,10 +58,12 @@ export function mapUser(raw: BackendUser, tenantSlug?: string | null): AuthUser 
     avatar: raw.avatarUrl ?? raw.avatar ?? null,
     emailVerified: raw.emailVerified,
     isSuperAdmin: userType === 'SUPER_ADMIN',
+    userType,
     roles: raw.roles ?? [],
     permissions: raw.permissions ?? [],
     tenantId: raw.tenantId ?? undefined,
-    tenantSlug: tenantSlug ?? raw.tenantSlug
+    tenantSlug: tenantSlug ?? raw.tenantSlug,
+    featureFlags: raw.featureFlags
   }
 }
 

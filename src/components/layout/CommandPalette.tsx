@@ -7,7 +7,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { NAVIGATION, QUICK_ACTIONS, APP_BASE } from '@/constants/navigation'
 import { setCommandPaletteOpen } from '@/store/slices/appSlice'
 import type { RootState } from '@/store'
-import { useEntitlements } from '@/hooks/useEntitlements'
+import { useFeatureAccess } from '@/hooks/useFeatureAccess'
 import { usePermissions } from '@/hooks/usePermissions'
 import { canAccessNav } from '@/lib/permissions'
 import { filterNavigation } from '@/lib/navigation-access'
@@ -16,7 +16,7 @@ export function CommandPalette() {
   const navigate = useNavigate()
   const dispatch = useDispatch()
   const open = useSelector((s: RootState) => s.app.commandPaletteOpen)
-  const { hasFeature } = useEntitlements()
+  const { hasFeature } = useFeatureAccess()
   const { permissions, roles, isSuperAdmin } = usePermissions()
   const visibleNavigation = filterNavigation(NAVIGATION, {
     canPermission: (item) => canAccessNav(item.permission, permissions, roles, isSuperAdmin, item.superAdminOnly),

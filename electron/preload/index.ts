@@ -1,12 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { ApiRequest, DesktopApiResponse } from '../main/api/dinehubClient'
 
 const electronAPI = {
-  requestDineHub: (request: {
-    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
-    path: string
-    query?: Record<string, string | number | boolean | undefined>
-    body?: unknown
-  }): Promise<unknown> => ipcRenderer.invoke('dinehub:request', request),
+  requestDineHub: (request: ApiRequest): Promise<{
+    ok: boolean
+    response?: DesktopApiResponse
+    error?: { statusCode: number; message: string; errors?: string[] | Record<string, string[]>; path?: string }
+  }> => ipcRenderer.invoke('dinehub:request', request),
   hasSession: (): Promise<boolean> => ipcRenderer.invoke('auth:hasSession'),
   menuImages: {
     select: (kind: 'category' | 'item' | 'combo' = 'item'): Promise<{
@@ -55,6 +55,11 @@ const electronAPI = {
   printReceipt: (html: string): Promise<void> => ipcRenderer.invoke('print:receiptHtml', html),
   saveFile: (file: { filename: string; content: string }): Promise<{ saved: boolean; path?: string }> =>
     ipcRenderer.invoke('file:saveText', file),
+  saveBytes: (file: { filename: string; bytes: Uint8Array; contentType?: string }): Promise<{
+    saved: boolean
+    cancelled?: boolean
+    path?: string
+  }> => ipcRenderer.invoke('file:saveBytes', file),
 
   // Extended APIs (backward compat)
   window: {

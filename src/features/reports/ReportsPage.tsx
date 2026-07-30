@@ -44,12 +44,9 @@ export default function ReportsPage() {
   const exportReport = async (format: 'csv' | 'xlsx' | 'pdf') => {
     try {
       const result = await reportsApi.export(format)
-      const url = URL.createObjectURL(result.blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = result.filename
-      link.click()
-      URL.revokeObjectURL(url)
+      const saved = await window.electronAPI.saveBytes(result)
+      if (saved.saved) toast.success(`Saved ${result.filename}`)
+      else if (!saved.cancelled) toast.error('The export could not be saved')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to export report')
     }

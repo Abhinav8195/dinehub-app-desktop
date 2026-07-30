@@ -8,6 +8,7 @@ import { store } from '@/store'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AuthProvider } from '@/providers/AuthProvider'
 import App from './App'
+import { UnsupportedEnvironment } from '@/components/UnsupportedEnvironment'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -40,7 +41,7 @@ function AppBootstrap({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-createRoot(document.getElementById('root')!).render(
+const application = window.electronAPI ? (
   <StrictMode>
     <Provider store={store}>
       <QueryClientProvider client={queryClient}>
@@ -57,4 +58,6 @@ createRoot(document.getElementById('root')!).render(
       </QueryClientProvider>
     </Provider>
   </StrictMode>
-)
+) : <UnsupportedEnvironment />
+
+createRoot(document.getElementById('root')!).render(application)

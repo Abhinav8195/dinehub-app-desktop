@@ -35,7 +35,8 @@ import UsersManagementPage from '@/features/users/UsersManagementPage'
 import SettingsPage from '@/features/settings/SettingsPage'
 import SaaSPage from '@/features/saas/SaaSPage'
 import { FeatureRouteGuard } from '@/guards/FeatureRouteGuard'
-import type { FeatureKey } from '@/api/types/billing.types'
+import type { RestaurantFeature } from '@/types/restaurant-features'
+import { NoFeaturesEnabled } from '@/components/auth/FeatureAccessBoundary'
 
 function LayoutWrapper() {
   useTrackPage()
@@ -51,7 +52,7 @@ function GuestGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-const featurePage = (feature: FeatureKey, page: React.ReactNode, permission?: string) => (
+const featurePage = (feature: RestaurantFeature, page: React.ReactNode, permission?: string) => (
   <FeatureRouteGuard feature={feature} permission={permission}>{page}</FeatureRouteGuard>
 )
 
@@ -79,49 +80,50 @@ const router = createBrowserRouter([
       {
         element: <LayoutWrapper />,
         children: [
-          { index: true, element: <DashboardPage /> },
-          { path: 'pos', element: featurePage('pos', <POSPage />, 'pos.access') },
-          { path: 'orders', element: featurePage('orders', <OrdersPage />, 'orders.view') },
-          { path: 'tables', element: featurePage('tables', <TablesPage />, 'tables.view') },
-          { path: 'qr-ordering', element: featurePage('qr_ordering', <QROrderingPage />, 'qr.view') },
-          { path: 'kitchen', element: featurePage('kitchen_display', <KitchenPage />, 'kitchen.view') },
-          { path: 'menu', element: featurePage('menu', <MenuPage />, 'menu.view') },
-          { path: 'menu/categories', element: featurePage('menu', <MenuPage />, 'menu.view') },
-          { path: 'menu/items', element: featurePage('menu', <MenuPage />, 'menu.view') },
-          { path: 'menu/modifiers', element: featurePage('menu', <ModifierManagementPage />, 'menu.view') },
-          { path: 'menu/combos', element: featurePage('menu', <ComboManagementPage />, 'menu.view') },
-          { path: 'inventory', element: featurePage('inventory_basic', <InventoryPage />, 'inventory.view') },
-          { path: 'inventory/items', element: featurePage('inventory_basic', <InventoryPage />, 'inventory.view') },
-          { path: 'inventory/warehouse', element: featurePage('inventory_basic', <InventoryPage />, 'inventory.warehouse.manage') },
-          { path: 'inventory/materials', element: featurePage('inventory_basic', <InventoryPage />, 'inventory.view') },
-          { path: 'inventory/goods', element: featurePage('inventory_basic', <InventoryPage />, 'inventory.view') },
-          { path: 'inventory/transfer', element: featurePage('stock_transfer', <InventoryPage />, 'inventory.view') },
-          { path: 'inventory/purchase', element: featurePage('purchasing', <InventoryPage />, 'inventory.purchase.view') },
-          { path: 'inventory/suppliers', element: featurePage('purchasing', <InventoryPage />, 'inventory.purchase.view') },
-          { path: 'inventory/alerts', element: featurePage('inventory_basic', <InventoryPage />, 'inventory.view') },
-          { path: 'inventory/logs', element: featurePage('inventory_basic', <InventoryPage />, 'inventory.view') },
-          { path: 'purchase', element: featurePage('purchasing', <PurchasePage />, 'purchase.view') },
-          { path: 'customers', element: featurePage('customers', <CustomersPage />, 'customers.view') },
-          { path: 'users', element: <UsersManagementPage /> },
-          { path: 'users/roles', element: featurePage('custom_roles', <UsersManagementPage />, 'roles.read') },
-          { path: 'users/departments', element: <UsersManagementPage /> },
-          { path: 'users/invites', element: featurePage('employee_invites', <UsersManagementPage />, 'users.invites.view') },
-          { path: 'users/audit', element: <UsersManagementPage /> },
-          { path: 'employees', element: featurePage('shifts', <EmployeesPage />, 'employees.view') },
-          { path: 'staff', element: featurePage('custom_roles', <StaffPage />, 'staff.view') },
-          { path: 'reservations', element: featurePage('reservations', <ReservationsPage />, 'reservations.view') },
-          { path: 'reports', element: featurePage('reports_export', <ReportsPage />, 'reports.view') },
-          { path: 'crm', element: featurePage('campaigns', <CRMPage />, 'crm.view') },
-          { path: 'accounting', element: featurePage('accounting', <AccountingPage />, 'accounting.view') },
-          { path: 'analytics', element: featurePage('analytics', <AnalyticsPage />, 'analytics.view') },
-          { path: 'notifications', element: featurePage('notifications', <NotificationsPage />, 'notifications.view') },
-          { path: 'settings', element: <SettingsPage /> },
-          { path: 'account', element: <AccountSettingsPage /> },
-          { path: 'roles', element: featurePage('custom_roles', <RolesPage />, 'roles.manage') },
-          { path: 'sessions', element: <SessionsPage /> },
-          { path: 'admin/tenants', element: <TenantsAdminPage /> },
-          { path: 'saas', element: <SaaSPage /> },
-          { path: 'plans', element: <SaaSPage /> },
+          { index: true, element: featurePage('DASHBOARD', <DashboardPage />, 'dashboard.view') },
+          { path: 'pos', element: featurePage('POS', <POSPage />, 'pos.access') },
+          { path: 'orders', element: featurePage('ORDERS', <OrdersPage />, 'orders.view') },
+          { path: 'tables', element: featurePage('TABLE_MANAGEMENT', <TablesPage />, 'tables.view') },
+          { path: 'qr-ordering', element: featurePage('QR_ORDERING', <QROrderingPage />, 'qr.view') },
+          { path: 'kitchen', element: featurePage('KOT_KITCHEN', <KitchenPage />, 'kitchen.view') },
+          { path: 'menu', element: featurePage('MENU_MANAGEMENT', <MenuPage />, 'menu.view') },
+          { path: 'menu/categories', element: featurePage('MENU_CATEGORIES', <MenuPage />, 'menu.view') },
+          { path: 'menu/items', element: featurePage('MENU_ITEMS', <MenuPage />, 'menu.view') },
+          { path: 'menu/modifiers', element: featurePage('MODIFIERS', <ModifierManagementPage />, 'menu.view') },
+          { path: 'menu/combos', element: featurePage('COMBOS', <ComboManagementPage />, 'menu.view') },
+          { path: 'inventory', element: featurePage('INVENTORY_DASHBOARD', <InventoryPage />, 'inventory.view') },
+          { path: 'inventory/items', element: featurePage('INVENTORY_ITEMS', <InventoryPage />, 'inventory.view') },
+          { path: 'inventory/warehouse', element: featurePage('WAREHOUSES', <InventoryPage />, 'inventory.warehouse.manage') },
+          { path: 'inventory/materials', element: featurePage('RAW_MATERIALS', <InventoryPage />, 'inventory.view') },
+          { path: 'inventory/goods', element: featurePage('FINISHED_GOODS', <InventoryPage />, 'inventory.view') },
+          { path: 'inventory/transfer', element: featurePage('STOCK_TRANSFER', <InventoryPage />, 'inventory.view') },
+          { path: 'inventory/purchase', element: featurePage('PURCHASE_ORDERS', <InventoryPage />, 'inventory.purchase.view') },
+          { path: 'inventory/suppliers', element: featurePage('SUPPLIERS', <InventoryPage />, 'inventory.purchase.view') },
+          { path: 'inventory/alerts', element: featurePage('INVENTORY_ALERTS', <InventoryPage />, 'inventory.view') },
+          { path: 'inventory/logs', element: featurePage('INVENTORY_LOGS', <InventoryPage />, 'inventory.view') },
+          { path: 'purchase', element: featurePage('PURCHASE', <PurchasePage />, 'purchase.view') },
+          { path: 'customers', element: featurePage('CUSTOMERS', <CustomersPage />, 'customers.view') },
+          { path: 'users', element: featurePage('USERS', <UsersManagementPage />, 'users.view') },
+          { path: 'users/roles', element: featurePage('ROLES_PERMISSIONS', <UsersManagementPage />, 'roles.read') },
+          { path: 'users/departments', element: featurePage('DEPARTMENTS', <UsersManagementPage />, 'departments.view') },
+          { path: 'users/invites', element: featurePage('INVITATIONS', <UsersManagementPage />, 'users.invites.view') },
+          { path: 'users/audit', element: featurePage('AUDIT_LOGS', <UsersManagementPage />, 'audit.view') },
+          { path: 'employees', element: featurePage('EMPLOYEES', <EmployeesPage />, 'employees.view') },
+          { path: 'staff', element: featurePage('STAFF_PERMISSIONS', <StaffPage />, 'staff.view') },
+          { path: 'reservations', element: featurePage('RESERVATIONS', <ReservationsPage />, 'reservations.view') },
+          { path: 'reports', element: featurePage('REPORTS', <ReportsPage />, 'reports.view') },
+          { path: 'crm', element: featurePage('CRM', <CRMPage />, 'crm.view') },
+          { path: 'accounting', element: featurePage('ACCOUNTING', <AccountingPage />, 'accounting.view') },
+          { path: 'analytics', element: featurePage('ANALYTICS', <AnalyticsPage />, 'analytics.view') },
+          { path: 'notifications', element: featurePage('NOTIFICATIONS', <NotificationsPage />, 'notifications.view') },
+          { path: 'settings', element: featurePage('RESTAURANT_SETTINGS', <SettingsPage />, 'settings.view') },
+          { path: 'account', element: featurePage('ACCOUNT', <AccountSettingsPage />) },
+          { path: 'roles', element: featurePage('ROLES', <RolesPage />, 'roles.manage') },
+          { path: 'sessions', element: featurePage('SESSIONS', <SessionsPage />, 'auth.sessions.read') },
+          { path: 'admin/tenants', element: featurePage('SAAS_ADMIN', <TenantsAdminPage />) },
+          { path: 'saas', element: featurePage('SUBSCRIPTION_PLANS', <SaaSPage />, 'settings.view') },
+          { path: 'plans', element: featurePage('SUBSCRIPTION_PLANS', <SaaSPage />, 'settings.view') },
+          { path: 'no-features', element: <NoFeaturesEnabled /> },
         ],
       },
     ],
