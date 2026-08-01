@@ -2,7 +2,8 @@ export const BRAND = {
   name: 'DineHub',
   tagline: 'Restaurant POS & ERP',
   version: '1.0.0',
-  logo: '/logo.png',
+  logo: '/logo-mark.png',
+  logoFull: '/logo.png',
   logoAlt: 'DineHub logo',
   colors: {
     primary: '#FFC107',

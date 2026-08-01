@@ -105,18 +105,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true })
     try {
       const deviceId = await tokenBridge.getDeviceId()
-      const tenantSlug = await tokenBridge.getTenantSlug()
       const appName = import.meta.env.VITE_APP_NAME || 'DineHub Desktop'
 
       const result = await authApi.login({
         email,
         password,
-        ...(tenantSlug ? { tenantSlug } : {}),
         deviceName: `${appName} v1.0`,
         deviceType: 'electron-desktop',
         deviceId
       })
 
+      if (result.user.tenantSlug) {
+        await tokenBridge.setTenantSlug(result.user.tenantSlug)
+      }
       set({ user: result.user, isAuthenticated: true })
       await get().loadFeatures(result.user)
     } finally {

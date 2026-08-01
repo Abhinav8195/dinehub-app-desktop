@@ -11,6 +11,9 @@ import { connectRealtime, disconnectRealtime } from '../realtime'
 
 const store = new Store()
 const isDev = !app.isPackaged
+const appIcon = isDev
+  ? join(app.getAppPath(), 'build', 'icon.png')
+  : join(process.resourcesPath, 'assets', 'notification-icon.png')
 
 export function registerIpcHandlers(): void {
   registerAuthIpcHandlers()
@@ -119,6 +122,8 @@ export function registerIpcHandlers(): void {
       width: 1280,
       height: 800,
       fullscreen,
+      title: `DineHub ${hash === '/pos' ? 'POS' : 'Kitchen'}`,
+      ...(process.platform === 'darwin' ? {} : { icon: appIcon }),
       webPreferences: {
         preload: join(__dirname, '../../preload/index.js'),
         contextIsolation: true,
@@ -167,6 +172,21 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('notify:show', (_, title: string, body: string) => {
-    new Notification({ title, body }).show()
+    if (!Notification.isSupported()) return false
+    const notification = new Notification({
+      title: title.trim() || 'DineHub',
+      body,
+      icon: appIcon,
+      appName: 'DineHub'
+    })
+    notification.on('click', () => {
+      const win = getMainWindow()
+      if (!win) return
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+    })
+    notification.show()
+    return true
   })
 }

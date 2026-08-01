@@ -5,6 +5,11 @@ import { setMainWindow, getMainWindow } from './window'
 import { autoUpdater } from 'electron-updater'
 
 const isDev = !app.isPackaged
+const appIcon = isDev
+  ? join(app.getAppPath(), 'build', 'icon.png')
+  : join(process.resourcesPath, 'assets', 'notification-icon.png')
+
+app.setName('DineHub')
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -16,6 +21,7 @@ function createWindow(): void {
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     backgroundColor: '#FFFFFF',
     title: 'DineHub',
+    ...(process.platform === 'darwin' ? {} : { icon: appIcon }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,

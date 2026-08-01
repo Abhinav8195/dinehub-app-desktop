@@ -83,14 +83,22 @@
   "build": {
     "appId": "com.dinehub.desktop",
     "productName": "DineHub",
-    "icon": "public/logo.png",
+    "artifactName": "DineHub-${version}-${os}-${arch}.${ext}",
+    "icon": "build/icon.png",
     "directories": {
       "output": "release"
     },
+    "extraResources": [
+      {
+        "from": "build/notification-icon.png",
+        "to": "assets/notification-icon.png"
+      }
+    ],
     "files": [
       "out/**/*"
     ],
     "mac": {
+      "icon": "build/icon.png",
       "category": "public.app-category.business",
       "target": [
         "dmg",
@@ -98,11 +106,14 @@
       ]
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "nsis"
       ]
     },
     "linux": {
+      "icon": "build/icon.png",
+      "category": "Office",
       "target": [
         "AppImage",
         "deb"
