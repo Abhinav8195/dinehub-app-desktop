@@ -1,4 +1,4 @@
-import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom'
+import { createHashRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { AuthGuard } from '@/guards/AuthGuard'
 import { useTrackPage } from '@/hooks/useTrackPage'
@@ -56,7 +56,9 @@ const featurePage = (feature: RestaurantFeature, page: React.ReactNode, permissi
   <FeatureRouteGuard feature={feature} permission={permission}>{page}</FeatureRouteGuard>
 )
 
-const router = createBrowserRouter([
+// Hash routing keeps every route anchored to renderer/index.html. Unlike
+// browser-history URLs, it remains reload-safe when Electron uses file://.
+const router = createHashRouter([
   {
     path: '/',
     element: <Navigate to="/app" replace />,
