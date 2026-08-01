@@ -17,6 +17,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { Breadcrumb } from '@/components/common/Breadcrumb'
+import { AppUpdateButton } from '@/components/common/AppUpdateButton'
 import { LANGUAGES } from '@/constants/navigation'
 import { setRestaurant, setBranch, setLanguage, toggleDarkMode, setCommandPaletteOpen } from '@/store/slices/appSlice'
 import { useAuth } from '@/hooks/useAuth'
@@ -160,6 +161,9 @@ export function Topbar({ onCloseShift }: TopbarProps) {
               </TooltipContent>
             </Tooltip>
           )}
+
+          {/* App updates */}
+          <AppUpdateButton />
 
           {/* Lock screen */}
           <Tooltip>

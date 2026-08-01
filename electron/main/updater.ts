@@ -12,6 +12,7 @@ export type UpdateStatus = {
 
 let status: UpdateStatus = { state: 'idle', currentVersion: app.getVersion() }
 let initialized = false
+let periodicCheck: NodeJS.Timeout | undefined
 
 function publish(next: Partial<UpdateStatus> & Pick<UpdateStatus, 'state'>): UpdateStatus {
   status = { currentVersion: app.getVersion(), ...next }
@@ -84,6 +85,9 @@ export function initializeAutoUpdater(): void {
     if (result.response === 0) installDownloadedUpdate()
   })
 
-  // Give the main window time to finish opening, then check every launch.
+  // Check shortly after every launch, then periodically while the app remains
+  // open so long-running POS sessions receive new releases too.
   setTimeout(() => void checkForAppUpdates(), 3000)
+  periodicCheck = setInterval(() => void checkForAppUpdates(), 4 * 60 * 60 * 1000)
+  periodicCheck.unref()
 }
