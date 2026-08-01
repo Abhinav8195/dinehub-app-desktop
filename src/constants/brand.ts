@@ -1,13 +1,15 @@
 import packageJson from '../../package.json'
-
-const publicAsset = (filename: string): string => `${import.meta.env.BASE_URL}${filename}`
+import logoMark from '../../public/logo-mark.png'
+import logoFull from '../../public/logo.png'
 
 export const BRAND = {
   name: 'DineHub',
   tagline: 'Restaurant POS & ERP',
   version: packageJson.version,
-  logo: publicAsset('logo-mark.png'),
-  logoFull: publicAsset('logo.png'),
+  // Import the images so Vite includes them in the renderer bundle. This keeps
+  // the URLs valid when the packaged app is loaded from an ASAR via file://.
+  logo: logoMark,
+  logoFull,
   logoAlt: 'DineHub logo',
   colors: {
     primary: '#FFC107',
