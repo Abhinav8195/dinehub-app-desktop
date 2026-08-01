@@ -100,6 +100,8 @@
     "mac": {
       "icon": "build/icon.png",
       "category": "public.app-category.business",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
       "target": [
         "dmg",
         "zip"
@@ -120,7 +122,9 @@
       ]
     },
     "publish": {
-      "provider": "github"
+      "provider": "github",
+      "owner": "Abhinav8195",
+      "repo": "dinehub-app-desktop"
     }
   }
 }
