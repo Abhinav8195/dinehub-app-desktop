@@ -3,8 +3,8 @@ import { readFile, stat, writeFile } from 'fs/promises'
 import { extname, basename } from 'path'
 import Store from 'electron-store'
 import { join } from 'path'
-import { autoUpdater } from 'electron-updater'
 import { getMainWindow } from '../window'
+import { checkForAppUpdates, getUpdateStatus, installDownloadedUpdate } from '../updater'
 import { registerAuthIpcHandlers } from './auth'
 import { requestDineHubTransport, session, uploadMenuImage, type ApiRequest, type MenuImageUpload } from '../api/dinehubClient'
 import { connectRealtime, disconnectRealtime } from '../realtime'
@@ -162,14 +162,9 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('app:getVersion', () => app.getVersion())
-  ipcMain.handle('app:checkUpdate', async () => {
-    try {
-      const result = await autoUpdater.checkForUpdates()
-      return { available: !!result?.updateInfo }
-    } catch {
-      return { available: false }
-    }
-  })
+  ipcMain.handle('app:getUpdateStatus', () => getUpdateStatus())
+  ipcMain.handle('app:checkUpdate', () => checkForAppUpdates())
+  ipcMain.handle('app:installUpdate', () => installDownloadedUpdate())
 
   ipcMain.handle('notify:show', (_, title: string, body: string) => {
     if (!Notification.isSupported()) return false

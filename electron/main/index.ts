@@ -2,7 +2,7 @@ import { app, BrowserWindow, shell, ipcMain, nativeTheme } from 'electron'
 import { join } from 'path'
 import { registerIpcHandlers } from './ipc'
 import { setMainWindow, getMainWindow } from './window'
-import { autoUpdater } from 'electron-updater'
+import { initializeAutoUpdater } from './updater'
 
 const isDev = !app.isPackaged
 const appIcon = isDev
@@ -56,9 +56,7 @@ app.whenReady().then(() => {
   registerIpcHandlers()
   createWindow()
 
-  if (!isDev) {
-    autoUpdater.checkForUpdatesAndNotify().catch(() => {})
-  }
+  initializeAutoUpdater()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

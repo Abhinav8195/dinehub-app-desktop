@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { ApiRequest, DesktopApiResponse } from '../main/api/dinehubClient'
+import type { UpdateStatus } from '../main/updater'
 
 const electronAPI = {
   requestDineHub: (request: ApiRequest): Promise<{
@@ -51,6 +52,16 @@ const electronAPI = {
   setTenantSlug: (slug: string): Promise<void> => ipcRenderer.invoke('auth:setTenantSlug', slug),
   getDeviceId: (): Promise<string> => ipcRenderer.invoke('auth:getDeviceId'),
   getAppVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
+  updates: {
+    getStatus: (): Promise<UpdateStatus> => ipcRenderer.invoke('app:getUpdateStatus'),
+    check: (): Promise<UpdateStatus> => ipcRenderer.invoke('app:checkUpdate'),
+    install: (): Promise<boolean> => ipcRenderer.invoke('app:installUpdate'),
+    onStatus: (callback: (status: UpdateStatus) => void) => {
+      const handler = (_: unknown, status: UpdateStatus) => callback(status)
+      ipcRenderer.on('update:status', handler)
+      return () => ipcRenderer.removeListener('update:status', handler)
+    }
+  },
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('app:openExternal', url),
   printReceipt: (html: string): Promise<void> => ipcRenderer.invoke('print:receiptHtml', html),
   saveFile: (file: { filename: string; content: string }): Promise<{ saved: boolean; path?: string }> =>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Save, Printer, CreditCard, Globe, Receipt, Building } from 'lucide-react'
+import { Save, Printer, CreditCard, Globe, Receipt, Building, RefreshCw, RotateCcw } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { PageShell } from '@/components/common/PageShell'
 import { Button } from '@/components/ui/button'
@@ -31,6 +31,7 @@ export default function SettingsPage() {
   const [cgstPercent, setCgstPercent] = useState('2.5')
   const [serviceChargePercent, setServiceChargePercent] = useState('0')
   const [taxInclusive, setTaxInclusive] = useState(false)
+  const [updateStatus, setUpdateStatus] = useState<Awaited<ReturnType<typeof window.electronAPI.updates.getStatus>> | null>(null)
   const [restaurantForm, setRestaurantForm] = useState({
     name: '', legalName: '', gstin: '', fssai: '', fssaiNumber: '', defaultLanguage: 'en',
     razorpayEnabled: false, stripeEnabled: false, squareEnabled: false, paypalEnabled: false,
@@ -51,6 +52,17 @@ export default function SettingsPage() {
     const value = restaurant as Record<string, unknown>
     setRestaurantForm((current) => ({ ...current, ...Object.fromEntries(Object.keys(current).map((key) => [key, value[key] ?? current[key]])) }) as typeof current)
   }, [restaurant])
+  useEffect(() => {
+    window.electronAPI.updates.getStatus().then(setUpdateStatus).catch(() => {})
+    return window.electronAPI.updates.onStatus(setUpdateStatus)
+  }, [])
+
+  const checkForUpdates = async () => {
+    const next = await window.electronAPI.updates.check()
+    setUpdateStatus(next)
+    if (next.state === 'not-available') toast.success('DineHub is up to date')
+    if (next.state === 'error') toast.error(next.message || 'Unable to check for updates')
+  }
 
   const saveTaxMutation = useMutation({
     mutationFn: () => settingsApi.updateTax({
@@ -241,6 +253,39 @@ export default function SettingsPage() {
                 <BrandLogo size="lg" orientation="vertical" />
                 <p className="mt-4 text-sm text-muted-foreground max-w-md">{BRAND.tagline}</p>
                 <p className="mt-2 text-xs text-muted-foreground">Version {BRAND.version}</p>
+                <Separator className="my-6 max-w-md" />
+                <div className="w-full max-w-md rounded-xl border p-4">
+                  <div className="flex items-center justify-between gap-4 text-left">
+                    <div>
+                      <p className="text-sm font-medium">Automatic updates</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {updateStatus?.state === 'checking' && 'Checking for a new version…'}
+                        {updateStatus?.state === 'available' && `Version ${updateStatus.version} found. Download starting…`}
+                        {updateStatus?.state === 'downloading' && `Downloading version ${updateStatus.version ?? ''} — ${updateStatus.progress ?? 0}%`}
+                        {updateStatus?.state === 'downloaded' && `Version ${updateStatus.version} is ready to install.`}
+                        {updateStatus?.state === 'not-available' && 'You are using the latest version.'}
+                        {updateStatus?.state === 'error' && (updateStatus.message || 'Update check failed.')}
+                        {(!updateStatus || updateStatus.state === 'idle') && 'Enabled — DineHub checks whenever the app opens.'}
+                      </p>
+                    </div>
+                    {updateStatus?.state === 'downloaded' ? (
+                      <Button type="button" size="sm" onClick={() => window.electronAPI.updates.install()}>
+                        <RotateCcw className="mr-2 h-4 w-4" /> Restart & Install
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={updateStatus?.state === 'checking' || updateStatus?.state === 'downloading'}
+                        onClick={() => void checkForUpdates()}
+                      >
+                        <RefreshCw className={`mr-2 h-4 w-4 ${updateStatus?.state === 'checking' ? 'animate-spin' : ''}`} />
+                        Check for updates
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
