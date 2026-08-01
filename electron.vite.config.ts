@@ -25,6 +25,9 @@ export default defineConfig({
   },
   renderer: {
     root: '.',
+    // Packaged Electron pages are loaded through file://, so renderer assets
+    // must be relative to index.html instead of rooted at the filesystem root.
+    base: './',
     build: {
       rollupOptions: {
         input: resolve(__dirname, 'index.html')

@@ -1,9 +1,13 @@
+import packageJson from '../../package.json'
+
+const publicAsset = (filename: string): string => `${import.meta.env.BASE_URL}${filename}`
+
 export const BRAND = {
   name: 'DineHub',
   tagline: 'Restaurant POS & ERP',
-  version: '1.0.0',
-  logo: '/logo-mark.png',
-  logoFull: '/logo.png',
+  version: packageJson.version,
+  logo: publicAsset('logo-mark.png'),
+  logoFull: publicAsset('logo.png'),
   logoAlt: 'DineHub logo',
   colors: {
     primary: '#FFC107',
