@@ -16,6 +16,8 @@ import { filterNavigation } from '@/lib/navigation-access'
 import { useFeatureAccess } from '@/hooks/useFeatureAccess'
 import { cn } from '@/lib/utils'
 import type { RootState } from '@/store'
+import { useQuery } from '@tanstack/react-query'
+import { settingsApi } from '@/api/settings.api'
 
 export function Sidebar() {
   const location = useLocation()
@@ -25,12 +27,15 @@ export function Sidebar() {
   const { hasFeature } = useFeatureAccess()
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string[]>(['menu', 'inventory', 'users'])
+  const { data: restaurant } = useQuery({ queryKey: ['settings', 'restaurant'], queryFn: settingsApi.getRestaurant, staleTime: 60_000 })
+  const kotEnabled = restaurant?.kotEnabled !== false
 
   const canSee = (item: NavItem) =>
     canAccessNav(item.permission, permissions, roles, isSuperAdmin, item.superAdminOnly)
 
   const allVisible = useMemo(() => {
     const visible = filterNavigation(NAVIGATION, { canPermission: canSee, hasFeature })
+      .filter((item) => kotEnabled || item.id !== 'kitchen')
     const query = search.trim().toLowerCase()
     if (!query) return visible
 
@@ -39,7 +44,7 @@ export function Sidebar() {
       const matchingChildren = item.children?.filter((child) => child.title.toLowerCase().includes(query))
       return matchingChildren?.length ? [{ ...item, children: matchingChildren }] : []
     })
-  }, [search, permissions, roles, isSuperAdmin, hasFeature])
+  }, [search, permissions, roles, isSuperAdmin, hasFeature, kotEnabled])
   const pinnedIds = new Set(pinnedMenus)
   const favoriteIds = new Set(favorites)
 

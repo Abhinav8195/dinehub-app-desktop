@@ -18,16 +18,16 @@ export interface AuthUser {
   roles: string[]
   permissions: string[]
   tenantId?: string
-  tenantSlug?: string
+  tenant?: { id: string; name: string; slug: string; status: string } | null
   hasPin?: boolean
   employeeCode?: string
+  staffLoginId?: string
   featureFlags?: Array<{ key: string; enabled: boolean; config?: unknown }>
 }
 
 export interface LoginRequest {
   email: string
   password: string
-  tenantSlug?: string
   deviceName: string
   deviceType: 'electron-desktop'
   deviceId: string
@@ -52,12 +52,10 @@ export interface RegisterRequest {
   password: string
   firstName: string
   lastName: string
-  tenantSlug?: string
 }
 
 export interface ForgotPasswordRequest {
   email: string
-  tenantSlug?: string
 }
 
 export interface ResetPasswordRequest {
@@ -66,14 +64,12 @@ export interface ResetPasswordRequest {
 }
 
 export interface OtpRequest {
-  email: string
-  tenantSlug?: string
+  phone: string
 }
 
 export interface OtpVerifyRequest {
-  email: string
+  phone: string
   otp: string
-  tenantSlug?: string
 }
 
 export interface VerifyEmailRequest {
@@ -145,8 +141,7 @@ export interface SetPinRequest {
 }
 
 export interface PinLoginRequest {
-  tenantSlug: string
-  employeeCode: string
+  staffLoginId: string
   pin: string
   deviceName?: string
   deviceType?: string

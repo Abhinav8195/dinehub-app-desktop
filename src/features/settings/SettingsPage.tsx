@@ -33,9 +33,9 @@ export default function SettingsPage() {
   const [taxInclusive, setTaxInclusive] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<Awaited<ReturnType<typeof window.electronAPI.updates.getStatus>> | null>(null)
   const [restaurantForm, setRestaurantForm] = useState({
-    name: '', legalName: '', gstin: '', fssai: '', fssaiNumber: '', defaultLanguage: 'en',
+    name: '', legalName: '', address: '', phone: '', gstin: '', fssaiNumber: '', defaultLanguage: 'en',
     razorpayEnabled: false, stripeEnabled: false, squareEnabled: false, paypalEnabled: false,
-    razorpayKeyId: '', stripePublishableKey: '',
+    razorpayKeyId: '', stripePublishableKey: '', kotEnabled: true,
   })
 
   useEffect(() => {
@@ -79,8 +79,11 @@ export default function SettingsPage() {
     onError: (err: Error) => toast.error(err.message || 'Failed to save tax settings'),
   })
   const saveRestaurantMutation = useMutation({
-    mutationFn: () => settingsApi.updateRestaurant({ ...restaurantForm, languages: [restaurantForm.defaultLanguage] }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['settings', 'restaurant'] }); toast.success('Restaurant settings saved') },
+    mutationFn: (body: Record<string, unknown>) => settingsApi.updateRestaurant(body),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(['settings', 'restaurant'], (current: Record<string, unknown> | undefined) => ({ ...current, ...saved }))
+      toast.success('Restaurant settings saved')
+    },
     onError: (err: Error) => toast.error(err.message || 'Failed to save restaurant settings'),
   })
 
@@ -111,9 +114,11 @@ export default function SettingsPage() {
                   <div className="space-y-2"><Label>Restaurant Name</Label><Input value={restaurantForm.name} onChange={(event) => setRestaurantForm({ ...restaurantForm, name: event.target.value })} /></div>
                   <div className="space-y-2"><Label>Legal Name</Label><Input value={restaurantForm.legalName} onChange={(event) => setRestaurantForm({ ...restaurantForm, legalName: event.target.value })} /></div>
                 </div>
+                <div className="space-y-2"><Label>Full Address</Label><Input value={restaurantForm.address} onChange={(event) => setRestaurantForm({ ...restaurantForm, address: event.target.value })} placeholder="Street, city, state and PIN code" /></div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>GSTIN</Label><Input value={restaurantForm.gstin} onChange={(event) => setRestaurantForm({ ...restaurantForm, gstin: event.target.value })} /></div>
-                  <div className="space-y-2"><Label>FSSAI</Label><Input value={restaurantForm.fssai || restaurantForm.fssaiNumber} onChange={(event) => setRestaurantForm({ ...restaurantForm, fssai: event.target.value, fssaiNumber: event.target.value })} /></div>
+                  <div className="space-y-2"><Label>GSTIN</Label><Input value={restaurantForm.gstin} onChange={(event) => setRestaurantForm({ ...restaurantForm, gstin: event.target.value.toUpperCase() })} /></div>
+                  <div className="space-y-2"><Label>Phone Number</Label><Input value={restaurantForm.phone} onChange={(event) => setRestaurantForm({ ...restaurantForm, phone: event.target.value })} placeholder="+91 98765 43210" /></div>
+                  <div className="space-y-2"><Label>FSSAI</Label><Input value={restaurantForm.fssaiNumber} onChange={(event) => setRestaurantForm({ ...restaurantForm, fssaiNumber: event.target.value })} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label>Default Language</Label>
@@ -122,7 +127,16 @@ export default function SettingsPage() {
                     </Select>
                   </div>
                 </div>
-                <Button onClick={() => saveRestaurantMutation.mutate()} disabled={saveRestaurantMutation.isPending}><Save className="h-4 w-4 mr-2" /> Save Restaurant</Button>
+                <div className="flex items-center justify-between rounded-xl border p-4">
+                  <div><Label htmlFor="kot-enabled">Enable KOT / Kitchen</Label><p className="mt-1 text-xs text-muted-foreground">Show kitchen screens and send orders to the KOT workflow.</p></div>
+                  <Switch id="kot-enabled" checked={restaurantForm.kotEnabled} onCheckedChange={(kotEnabled) => setRestaurantForm({ ...restaurantForm, kotEnabled })} />
+                </div>
+                <Button onClick={() => saveRestaurantMutation.mutate({
+                  name: restaurantForm.name.trim(), legalName: restaurantForm.legalName.trim() || undefined,
+                  address: restaurantForm.address.trim() || undefined, phone: restaurantForm.phone.trim() || undefined,
+                  gstin: restaurantForm.gstin.trim() || undefined, fssaiNumber: restaurantForm.fssaiNumber.trim() || undefined,
+                  defaultLanguage: restaurantForm.defaultLanguage, kotEnabled: restaurantForm.kotEnabled,
+                })} disabled={saveRestaurantMutation.isPending}><Save className="h-4 w-4 mr-2" /> Save Restaurant</Button>
               </CardContent>
             </Card>
           </TabsContent>
@@ -204,7 +218,11 @@ export default function SettingsPage() {
                     <Switch checked={restaurantForm[key]} onCheckedChange={(enabled) => setRestaurantForm({ ...restaurantForm, [key]: enabled })} />
                   </div>
                 })}
-                <Button onClick={() => saveRestaurantMutation.mutate()} disabled={saveRestaurantMutation.isPending}><Save className="h-4 w-4 mr-2" /> Save Payment Settings</Button>
+                <Button onClick={() => saveRestaurantMutation.mutate({
+                  razorpayEnabled: restaurantForm.razorpayEnabled, stripeEnabled: restaurantForm.stripeEnabled,
+                  squareEnabled: restaurantForm.squareEnabled, paypalEnabled: restaurantForm.paypalEnabled,
+                  razorpayKeyId: restaurantForm.razorpayKeyId || undefined, stripePublishableKey: restaurantForm.stripePublishableKey || undefined,
+                })} disabled={saveRestaurantMutation.isPending}><Save className="h-4 w-4 mr-2" /> Save Payment Settings</Button>
               </CardContent>
             </Card>
           </TabsContent>
@@ -225,12 +243,18 @@ export default function SettingsPage() {
                   onClick={() => {
                     const html = buildReceiptHtml({
                       orderNumber: '#1042',
+                      invoiceNumber: '1042',
+                      restaurant: { name: restaurantForm.name || 'DineHub Restaurant', gstin: restaurantForm.gstin, address: restaurantForm.address, phone: restaurantForm.phone },
+                      customerName: 'Walk-in',
                       table: 'T-05',
+                      orderType: 'Dine In',
+                      cashierName: 'Cashier',
                       items: [{ name: 'Grilled Salmon', qty: 2, price: 24.5 }],
                       subtotal: 49,
-                      tax: 4.17,
+                      taxes: [{ name: 'CGST', rate: 2.5, amount: 2.09 }, { name: 'SGST', rate: 2.5, amount: 2.08 }],
                       total: 53.17,
-                      paymentMethod: 'Card'
+                      paymentMethod: 'Card',
+                      footerText: 'Thanks for visit'
                     })
                     const w = window.open('', '_blank', 'width=360,height=640')
                     w?.document.write(html)

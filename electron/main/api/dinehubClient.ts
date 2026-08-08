@@ -1,4 +1,4 @@
-import { getAccessToken, getRefreshToken, getTenantSlug, setTenantSlug, setTokens, clearTokens } from '../store/secureStore'
+import { getAccessToken, getRefreshToken, setTokens, clearTokens } from '../store/secureStore'
 
 export type ApiMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 export type DesktopResponseType = 'json' | 'text' | 'arraybuffer' | 'blob'
@@ -145,13 +145,11 @@ async function refreshAccessToken(): Promise<string> {
 }
 
 function requestHeaders(request: ApiRequest, accessToken: string | null): Record<string, string> {
-  const tenantSlug = getTenantSlug()
   const headers: Record<string, string> = {
     Accept: request.responseType === 'arraybuffer' || request.responseType === 'blob' ? '*/*' : 'application/json',
     ...request.headers
   }
   if (!headers['Content-Type']) headers['Content-Type'] = 'application/json'
-  if (tenantSlug) headers['X-Tenant-Slug'] = tenantSlug
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`
   return headers
 }
@@ -197,8 +195,6 @@ async function sendImageUpload(
   onProgress: (progress: number) => void
 ): Promise<unknown> {
   const headers: Record<string, string> = { Accept: 'application/json' }
-  const tenantSlug = getTenantSlug()
-  if (tenantSlug) headers['X-Tenant-Slug'] = tenantSlug
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`
   const bytes = Buffer.from(file.base64, 'base64')
   const form = new FormData()
@@ -223,13 +219,11 @@ async function sendImageUploadOnce(
 ): Promise<unknown> {
   const form = new FormData()
   form.append('file', new Blob([Buffer.from(file.base64, 'base64')], { type: file.mimeType }), file.name)
-  const tenantSlug = getTenantSlug()
   const response = await fetch(buildUrl(path), {
     method: 'POST',
     headers: {
       Accept: 'application/json',
       Authorization: `Bearer ${accessToken}`,
-      ...(tenantSlug ? { 'X-Tenant-Slug': tenantSlug } : {})
     },
     body: form
   })
@@ -244,10 +238,6 @@ export async function requestDineHub(request: ApiRequest): Promise<unknown> {
 
 export async function requestDineHubTransport(request: ApiRequest): Promise<DesktopApiResponse> {
   assertRequest(request)
-  if (request.path === '/auth/login' && request.body && typeof request.body === 'object') {
-    const slug = (request.body as { tenantSlug?: unknown }).tenantSlug
-    if (typeof slug === 'string' && slug) setTenantSlug(slug)
-  }
   const result = await send(request, getAccessToken())
   const payload = result.data
   const tokens = (payload as { data?: { tokens?: { accessToken?: string; refreshToken?: string } } }).data?.tokens
@@ -293,6 +283,5 @@ export async function uploadMenuImage(
 
 export const session = {
   hasSession: () => Boolean(getAccessToken() && getRefreshToken()),
-  clear: clearTokens,
-  getTenantSlug
+  clear: clearTokens
 }

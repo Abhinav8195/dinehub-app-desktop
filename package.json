@@ -1,6 +1,6 @@
 {
   "name": "dine-hub-desktop",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Enterprise Restaurant & Cafe Management Desktop Application",
   "main": "out/main/index.js",
   "author": "DineHub",
@@ -8,6 +8,9 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "build:web": "vite build --config vite.web.config.ts",
+    "build:admin-web": "VITE_WEB_BASE=/admin/ VITE_API_URL=/api/v1 vite build --config vite.web.config.ts",
+    "dev:web": "vite --config vite.web.config.ts",
     "preview": "electron-vite preview",
     "dist": "electron-vite build && electron-builder",
     "dist:mac": "electron-vite build && electron-builder --mac",

@@ -14,7 +14,6 @@ import { BrandLogo } from '@/components/brand/BrandLogo'
 import { ApiError } from '@/api/types/common'
 
 const schema = z.object({
-  tenantSlug: z.string().min(1, 'Tenant slug is required'),
   email: z.string().email('Invalid email'),
 })
 
@@ -25,7 +24,7 @@ export default function ForgotPasswordPage() {
   const [sent, setSent] = useState(false)
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { tenantSlug: 'demo-restaurant', email: '' }
+    defaultValues: { email: '' }
   })
 
   const onSubmit = async (data: FormData) => {
@@ -45,17 +44,12 @@ export default function ForgotPasswordPage() {
           <BrandLogo size="md" orientation="vertical" className="mx-auto mb-4" />
           <CardTitle>Reset Password</CardTitle>
           <CardDescription>
-            {sent ? 'Check your email for reset instructions.' : 'Enter your tenant and email to receive a reset link.'}
+            {sent ? 'Check your email for reset instructions.' : 'Enter your email to receive a reset link.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {!sent ? (
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-              <div className="space-y-2">
-                <Label>Tenant Slug</Label>
-                <Input placeholder="demo-restaurant" {...register('tenantSlug')} />
-                {errors.tenantSlug && <p className="text-xs text-danger">{errors.tenantSlug.message}</p>}
-              </div>
               <div className="space-y-2">
                 <Label>Email</Label>
                 <Input type="email" placeholder="owner@demo-restaurant.com" {...register('email')} />

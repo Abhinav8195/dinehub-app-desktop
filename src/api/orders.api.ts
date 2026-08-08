@@ -7,12 +7,17 @@ import type {
 } from './types/pos.types'
 
 export const ordersApi = {
-  list: (status?: string) =>
-    unwrap(
-      apiClient.get<ApiResponse<PosOrder[]>>('/orders', {
+  list: async (status?: string): Promise<PosOrder[]> => {
+    const result = await unwrap(
+      apiClient.get<ApiResponse<PosOrder[] | { orders?: PosOrder[]; data?: PosOrder[] }>>('/orders', {
         params: status ? { status } : undefined,
       }),
-    ),
+    )
+    if (Array.isArray(result)) return result
+    if (Array.isArray(result?.orders)) return result.orders
+    if (Array.isArray(result?.data)) return result.data
+    return []
+  },
 
   get: (id: string) =>
     unwrap(apiClient.get<ApiResponse<PosOrder>>(`/orders/${id}`)),
@@ -31,4 +36,7 @@ export const ordersApi = {
     unwrap(
       apiClient.patch<ApiResponse<PosOrder>>(`/orders/${id}/status`, { status }),
     ),
+
+  delete: (id: string) =>
+    unwrap(apiClient.delete<ApiResponse<null>>(`/orders/${id}`)),
 }

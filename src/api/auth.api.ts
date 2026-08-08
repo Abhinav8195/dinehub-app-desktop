@@ -1,4 +1,4 @@
-import apiClient, { tokenBridge, unwrap, unwrapPaginated } from './client'
+import apiClient, { unwrap, unwrapPaginated } from './client'
 import type { ApiResponse, PaginationParams } from './types/common'
 import type {
   AuthUser, LoginRequest, LoginResponse, RefreshRequest, RefreshResponse,
@@ -17,25 +17,20 @@ import {
   mapUser
 } from '@/lib/mappers/auth.mapper'
 
-async function getTenantSlug(): Promise<string | null> {
-  return tokenBridge.getTenantSlug()
-}
-
 export const authApi = {
   register: (body: RegisterRequest) =>
     unwrap(apiClient.post<ApiResponse<AuthUser>>('/auth/register', body)).then((user) =>
-      mapUser(user as never, body.tenantSlug)
+      mapUser(user as never)
     ),
 
   login: async (body: LoginRequest) => {
     const raw = await unwrap(apiClient.post<ApiResponse<LoginResponse>>('/auth/login', body))
-    return mapLoginResponse(raw as never, body.tenantSlug)
+    return mapLoginResponse(raw as never)
   },
 
   refresh: async (body: RefreshRequest) => {
     const raw = await unwrap(apiClient.post<ApiResponse<RefreshResponse>>('/auth/refresh', body))
-    const tenantSlug = await getTenantSlug()
-    return mapRefreshResponse(raw as never, tenantSlug)
+    return mapRefreshResponse(raw as never)
   },
 
   logout: (body?: LogoutRequest) =>
@@ -52,7 +47,7 @@ export const authApi = {
 
   verifyOtp: async (body: OtpVerifyRequest) => {
     const raw = await unwrap(apiClient.post<ApiResponse<LoginResponse>>('/auth/otp/verify', body))
-    return mapLoginResponse(raw as never, body.tenantSlug)
+    return mapLoginResponse(raw as never)
   },
 
   verifyEmail: (body: VerifyEmailRequest) =>
@@ -60,8 +55,7 @@ export const authApi = {
 
   me: async () => {
     const raw = await unwrap(apiClient.get<ApiResponse<AuthUser>>('/auth/me'))
-    const tenantSlug = await getTenantSlug()
-    return mapUser(raw as never, tenantSlug)
+    return mapUser(raw as never)
   },
 
   changePassword: (body: ChangePasswordRequest) =>
@@ -112,7 +106,7 @@ export const authApi = {
 
   pinLogin: async (body: PinLoginRequest) => {
     const raw = await unwrap(apiClient.post<ApiResponse<LoginResponse>>('/auth/pin/login', body))
-    return mapLoginResponse(raw as never, body.tenantSlug)
+    return mapLoginResponse(raw as never)
   },
 
   lockScreen: () =>

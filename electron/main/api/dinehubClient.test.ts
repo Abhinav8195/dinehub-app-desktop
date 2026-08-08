@@ -41,12 +41,12 @@ describe('main-process DineHub client', () => {
     vi.stubGlobal('fetch', vi.fn())
   })
 
-  it('attaches JSON, bearer, and tenant headers', async () => {
+  it('attaches JSON and bearer headers without legacy tenant identity', async () => {
     vi.mocked(fetch).mockResolvedValue(json({ success: true, data: [] }))
     await requestDineHub({ method: 'GET', path: '/menu/categories' })
     const init = vi.mocked(fetch).mock.calls[0][1]
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer access-old')
-    expect(new Headers(init?.headers).get('X-Tenant-Slug')).toBe('pizza-place')
+    expect(new Headers(init?.headers).get('X-Tenant-Slug')).toBeNull()
     expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json')
   })
 
@@ -56,7 +56,7 @@ describe('main-process DineHub client', () => {
       data: { user: { id: 'u1' }, tokens: { accessToken: 'a1', refreshToken: 'r1', expiresIn: 3600, tokenType: 'Bearer' } }
     }))
     const body = {
-      email: 'owner@example.com', password: 'secret', tenantSlug: 'cafe',
+      email: 'owner@example.com', password: 'secret',
       deviceName: 'DineHub Desktop', deviceType: 'electron-desktop', deviceId: 'device-1'
     } as const
     await requestDineHub({ method: 'POST', path: '/auth/login', body })

@@ -115,9 +115,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         deviceId
       })
 
-      if (result.user.tenantSlug) {
-        await tokenBridge.setTenantSlug(result.user.tenantSlug)
-      }
       set({ user: result.user, isAuthenticated: true })
       await get().loadFeatures(result.user)
     } finally {

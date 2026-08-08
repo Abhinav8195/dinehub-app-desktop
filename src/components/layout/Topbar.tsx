@@ -120,7 +120,7 @@ export function Topbar({ onCloseShift }: TopbarProps) {
             </Select>
           ) : (
             <Badge variant="secondary" className="hidden md:flex h-9 px-3">
-              {user?.tenantSlug ?? 'Current restaurant'}
+              {user?.tenant?.name ?? 'Current restaurant'}
             </Badge>
           )}
 

@@ -24,7 +24,7 @@ type BackendUser = {
   createdAt?: string
   roles: string[]
   permissions: string[]
-  tenantSlug?: string
+  tenant?: { id: string; name: string; slug: string; status: string } | null
   featureFlags?: Array<{ key: string; enabled: boolean; config?: unknown }>
 }
 
@@ -47,7 +47,7 @@ type BackendSession = {
   isCurrent?: boolean
 }
 
-export function mapUser(raw: BackendUser, tenantSlug?: string | null): AuthUser {
+export function mapUser(raw: BackendUser): AuthUser {
   const userType = raw.userType?.toUpperCase()
   return {
     id: raw.id,
@@ -62,27 +62,25 @@ export function mapUser(raw: BackendUser, tenantSlug?: string | null): AuthUser 
     roles: raw.roles ?? [],
     permissions: raw.permissions ?? [],
     tenantId: raw.tenantId ?? undefined,
-    tenantSlug: tenantSlug ?? raw.tenantSlug,
+    tenant: raw.tenant ?? null,
     featureFlags: raw.featureFlags
   }
 }
 
 export function mapLoginResponse(
-  raw: { user: BackendUser; tokens: LoginResponse['tokens'] },
-  tenantSlug?: string | null
+  raw: { user: BackendUser; tokens: LoginResponse['tokens'] }
 ): LoginResponse {
   return {
-    user: mapUser(raw.user, tenantSlug),
+    user: mapUser(raw.user),
     tokens: raw.tokens
   }
 }
 
 export function mapRefreshResponse(
-  raw: { user?: BackendUser; tokens: RefreshResponse['tokens'] },
-  tenantSlug?: string | null
+  raw: { user?: BackendUser; tokens: RefreshResponse['tokens'] }
 ): RefreshResponse {
   return {
-    user: raw.user ? mapUser(raw.user, tenantSlug) : undefined,
+    user: raw.user ? mapUser(raw.user) : undefined,
     tokens: raw.tokens
   }
 }

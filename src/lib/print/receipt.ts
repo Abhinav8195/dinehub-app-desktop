@@ -1,74 +1,103 @@
-import { BRAND } from '@/constants/brand'
-
 export interface ReceiptData {
   orderNumber: string
+  invoiceNumber?: string
+  restaurant?: {
+    name?: string
+    logoUrl?: string | null
+    showLogo?: boolean
+    address?: string
+    phone?: string
+    gstin?: string
+  }
+  customerName?: string
   table?: string
-  items: { name: string; qty: number; price: number }[]
+  orderType?: string
+  cashierName?: string
+  items: { name: string; qty: number; price: number; amount?: number }[]
   subtotal: number
-  tax: number
+  tax?: number
+  taxes?: { name: string; rate?: number; amount: number }[]
+  discount?: number
+  additionalCharges?: { name: string; amount: number }[]
+  roundOff?: number
   total: number
   paymentMethod?: string
-  date?: Date
+  footerText?: string
+  date?: Date | string
 }
 
-export function buildReceiptHtml(data: ReceiptData): string {
-  const date = (data.date ?? new Date()).toLocaleString()
-  const rows = data.items
-    .map(
-      (item) => `
-      <tr>
-        <td style="padding:4px 0">${item.name}</td>
-        <td style="text-align:center">${item.qty}</td>
-        <td style="text-align:right">₹${(item.price * item.qty).toFixed(2)}</td>
-      </tr>`
-    )
-    .join('')
+const escapeHtml = (value: unknown) => String(value ?? '')
+  .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;').replaceAll("'", '&#039;')
 
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>${BRAND.name} Receipt</title>
+const money = (value: number) => `₹${Number(value || 0).toFixed(2)}`
+
+export function buildReceiptHtml(data: ReceiptData): string {
+  const restaurant = data.restaurant ?? {}
+  const date = new Date(data.date ?? Date.now()).toLocaleString('en-IN', {
+    day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit'
+  })
+  const taxes = data.taxes?.length
+    ? data.taxes
+    : data.tax ? [{ name: 'Tax', amount: data.tax }] : []
+  const totalQty = data.items.reduce((sum, item) => sum + item.qty, 0)
+  const rows = data.items.map((item) => `
+    <tr><td>${escapeHtml(item.name)}</td><td>${item.qty}</td><td>${money(item.price)}</td><td>${money(item.amount ?? item.price * item.qty)}</td></tr>`).join('')
+  const taxRows = taxes.map((tax) => `
+    <tr><td>${escapeHtml(tax.name)}${tax.rate !== undefined ? ` @${tax.rate}%` : ''}</td><td>${money(tax.amount)}</td></tr>`).join('')
+  const chargeRows = (data.additionalCharges ?? []).map((charge) => `
+    <tr><td>${escapeHtml(charge.name)}</td><td>${money(charge.amount)}</td></tr>`).join('')
+
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${escapeHtml(data.invoiceNumber ?? data.orderNumber)}</title>
   <style>
-    body { font-family: Inter, Arial, sans-serif; color: ${BRAND.colors.dark}; margin: 0; padding: 16px; max-width: 320px; }
-    .header { text-align: center; border-bottom: 2px solid ${BRAND.colors.primary}; padding-bottom: 12px; margin-bottom: 12px; }
-    .logo { height: 48px; object-fit: contain; }
-    .brand { font-size: 20px; font-weight: 700; color: ${BRAND.colors.dark}; margin: 8px 0 2px; }
-    .tagline { font-size: 11px; color: #6B7280; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .totals td { padding: 4px 0; }
-    .total-row { font-weight: 700; font-size: 15px; border-top: 1px dashed ${BRAND.colors.border}; padding-top: 8px; }
-    .footer { text-align: center; margin-top: 16px; font-size: 11px; color: #6B7280; border-top: 1px solid ${BRAND.colors.border}; padding-top: 12px; }
-    .accent { color: ${BRAND.colors.primary}; font-weight: 600; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <img class="logo" src="${BRAND.logo}" alt="${BRAND.name}" />
-    <div class="brand">${BRAND.name}</div>
-    <div class="tagline">${BRAND.tagline}</div>
-  </div>
-  <p style="font-size:12px;margin:0 0 8px">Order: <strong>${data.orderNumber}</strong>${data.table ? ` · ${data.table}` : ''}<br/>${date}</p>
-  <table>
-    <thead>
-      <tr style="border-bottom:1px solid ${BRAND.colors.border}">
-        <th style="text-align:left;padding-bottom:6px">Item</th>
-        <th style="text-align:center">Qty</th>
-        <th style="text-align:right">Amt</th>
-      </tr>
-    </thead>
-    <tbody>${rows}</tbody>
-  </table>
-  <table class="totals" style="margin-top:12px">
-    <tr><td>Subtotal</td><td></td><td style="text-align:right">₹${data.subtotal.toFixed(2)}</td></tr>
-    <tr><td>Tax</td><td></td><td style="text-align:right">₹${data.tax.toFixed(2)}</td></tr>
-    <tr class="total-row"><td>Total</td><td></td><td style="text-align:right" class="accent">₹${data.total.toFixed(2)}</td></tr>
-  </table>
-  ${data.paymentMethod ? `<p style="font-size:12px;margin-top:12px">Paid via <strong>${data.paymentMethod}</strong></p>` : ''}
-  <div class="footer">
-    Thank you for dining with us!<br/>
-    Powered by <span class="accent">${BRAND.name}</span>
-  </div>
-</body>
-</html>`
+    @page { size: 58mm auto; margin: 1.5mm; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+    body { width: 55mm; font-family: "Arial Narrow", Arial, sans-serif; font-size: 10px; line-height: 1.2; }
+    .receipt { width: 100%; padding: .5mm; }
+    .center { text-align: center; } .bold { font-weight: 700; }
+    .logo { display: block; max-width: 27mm; max-height: 12mm; width: auto; height: auto; object-fit: contain; margin: 0 auto 1mm; }
+    .restaurant-name { font-size: 14px; font-weight: 800; }
+    .rule { border: 0; border-top: 1px solid #000; margin: 1.5mm 0; }
+    .meta { display: grid; grid-template-columns: 1.15fr .85fr; gap: .7mm 1mm; }
+    .meta span:nth-child(even) { text-align: right; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .items th, .items td { padding: 1mm .35mm; vertical-align: top; }
+    .items th { border-bottom: 1px solid #000; }
+    .items th:first-child, .items td:first-child { width: 42%; text-align: left; overflow-wrap: anywhere; }
+    .items th:nth-child(2), .items td:nth-child(2) { width: 10%; text-align: center; }
+    .items th:nth-child(3), .items td:nth-child(3) { width: 23%; text-align: right; }
+    .items th:last-child, .items td:last-child { width: 25%; text-align: right; }
+    .totals td { padding: .6mm .35mm; } .totals td:last-child { text-align: right; }
+    .grand td { border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 1.4mm .35mm; font-size: 13px; font-weight: 800; }
+    .footer { margin-top: 3mm; text-align: center; white-space: pre-line; }
+    @media print { body { width: 55mm; } .no-print { display: none !important; } }
+  </style></head><body><main class="receipt">
+    <header class="center">
+      ${restaurant.showLogo !== false && restaurant.logoUrl ? `<img class="logo" src="${escapeHtml(restaurant.logoUrl)}" alt="" onerror="this.remove()">` : ''}
+      <div class="restaurant-name">${escapeHtml(restaurant.name || 'DineHub Restaurant')}</div>
+      ${restaurant.address ? `<div>${escapeHtml(restaurant.address)}</div>` : ''}
+      ${restaurant.phone ? `<div>Mobile: ${escapeHtml(restaurant.phone)}</div>` : ''}
+      ${restaurant.gstin ? `<div>GSTIN: ${escapeHtml(restaurant.gstin)}</div>` : ''}
+    </header>
+    <hr class="rule">
+    ${data.customerName ? `<div><b>Name:</b> ${escapeHtml(data.customerName)}</div><hr class="rule">` : ''}
+    <section class="meta">
+      <span><b>Date:</b> ${escapeHtml(date)}</span><span>${data.orderType ? `<b>${escapeHtml(data.orderType)}</b>` : ''}${data.table ? `: ${escapeHtml(data.table)}` : ''}</span>
+      <span><b>Cashier:</b> ${escapeHtml(data.cashierName || '—')}</span><span><b>Bill No.:</b> ${escapeHtml(data.invoiceNumber || data.orderNumber)}</span>
+      <span><b>Order:</b> ${escapeHtml(data.orderNumber)}</span><span></span>
+    </section>
+    <hr class="rule">
+    <table class="items"><thead><tr><th>Item</th><th>Qty.</th><th>Price</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table>
+    <hr class="rule">
+    <table class="totals">
+      <tr><td>Total Qty: ${totalQty}</td><td>Sub Total ${money(data.subtotal)}</td></tr>
+      ${data.discount ? `<tr><td>Discount</td><td>-${money(data.discount)}</td></tr>` : ''}
+      ${taxRows}${chargeRows}
+      ${data.roundOff ? `<tr><td>Round off</td><td>${data.roundOff > 0 ? '+' : ''}${data.roundOff.toFixed(2)}</td></tr>` : ''}
+      <tr class="grand"><td>Grand Total</td><td>${money(data.total)}</td></tr>
+    </table>
+    ${data.paymentMethod ? `<p class="center">Paid via <b>${escapeHtml(data.paymentMethod)}</b></p>` : ''}
+    <footer class="footer">${escapeHtml(data.footerText || 'Thanks for visit')}</footer>
+  </main></body></html>`
 }

@@ -112,12 +112,9 @@ export function CheckoutModal({
       toast.error('Please select a table for dine-in')
       return
     }
-    if (orderType === 'takeaway' && !phone.trim()) {
-      toast.error('Phone is required for takeaway')
-      return
-    }
-    if (!firstName.trim()) {
-      toast.error('First name is required')
+    const normalizedPhone = phone.replace(/[\s()-]/g, '')
+    if (normalizedPhone && !/^\+?[0-9]{7,15}$/.test(normalizedPhone)) {
+      toast.error('Enter a valid phone number or leave it blank')
       return
     }
 
@@ -139,8 +136,8 @@ export function CheckoutModal({
           quantity: item.quantity,
           notes: item.notes,
         })),
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
+        firstName: firstName.trim() || undefined,
+        lastName: lastName.trim() || undefined,
         email: email.trim() || undefined,
         phone: phone.trim() || undefined,
         instructions: instructions.trim() || undefined,
@@ -186,15 +183,15 @@ export function CheckoutModal({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-3">
             <div className="space-y-2">
-              <Label>First Name *</Label>
-              <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="First name" />
+              <Label>First Name <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Walk-in customer" />
             </div>
             <div className="space-y-2">
               <Label>Last Name</Label>
               <Input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Last name" />
             </div>
             <div className="space-y-2">
-              <Label>Phone {orderType === 'takeaway' ? '*' : ''}</Label>
+              <Label>Phone <span className="text-muted-foreground font-normal">(optional)</span></Label>
               <Input
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}

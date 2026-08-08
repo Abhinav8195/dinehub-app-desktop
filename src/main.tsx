@@ -10,6 +10,9 @@ import { AuthProvider } from '@/providers/AuthProvider'
 import App from './App'
 import { UnsupportedEnvironment } from '@/components/UnsupportedEnvironment'
 import './index.css'
+import { installBrowserBridge } from '@/platform/browserBridge'
+
+installBrowserBridge()
 
 const queryClient = new QueryClient({
   defaultOptions: {

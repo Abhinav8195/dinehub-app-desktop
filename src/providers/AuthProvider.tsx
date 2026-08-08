@@ -1,9 +1,7 @@
 import { useEffect } from 'react'
 import { useAuthStore } from '@/store/authStore'
-import { useTenantStore } from '@/store/tenantStore'
 import { connectSocket, disconnectSocket } from '@/lib/socket'
 import { flushOfflineQueue } from '@/lib/offline'
-import { tokenBridge } from '@/api/client'
 import { toast } from 'sonner'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -16,14 +14,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initialize()
   }, [initialize])
 
-  useEffect(() => {
-    const initTenant = async () => {
-      const slug = await tokenBridge.getTenantSlug()
-      if (!slug) return
-      useTenantStore.setState({ slug })
-    }
-    void initTenant()
-  }, [])
 
   useEffect(() => {
     if (isAuthenticated && user?.tenantId) {

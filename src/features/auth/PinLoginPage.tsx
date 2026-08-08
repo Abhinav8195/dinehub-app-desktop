@@ -9,7 +9,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { authApi } from '@/api/auth.api'
 import { tokenBridge } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
-import { useTenantStore } from '@/store/tenantStore'
 import { BrandLogo } from '@/components/brand/BrandLogo'
 import { BRAND } from '@/constants/brand'
 import { ApiError } from '@/api/types/common'
@@ -17,8 +16,7 @@ import { ApiError } from '@/api/types/common'
 export default function PinLoginPage() {
   const navigate = useNavigate()
   const setUser = useAuthStore((s) => s.setUser)
-  const [tenantSlug, setTenantSlug] = useState('demo-restaurant')
-  const [employeeCode, setEmployeeCode] = useState('')
+  const [staffLoginId, setStaffLoginId] = useState('')
   const [pin, setPin] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -27,8 +25,8 @@ export default function PinLoginPage() {
   }
 
   const handleLogin = async () => {
-    if (!employeeCode.trim()) {
-      toast.error('Enter employee code')
+    if (!staffLoginId.trim()) {
+      toast.error('Enter staff login ID')
       return
     }
     if (pin.length < 4) {
@@ -37,11 +35,9 @@ export default function PinLoginPage() {
     }
     setLoading(true)
     try {
-      await tokenBridge.setTenantSlug(tenantSlug.trim())
       const deviceId = await tokenBridge.getDeviceId()
       const result = await authApi.pinLogin({
-        tenantSlug: tenantSlug.trim(),
-        employeeCode: employeeCode.trim(),
+        staffLoginId: staffLoginId.trim(),
         pin,
         deviceName: 'DineHub POS',
         deviceType: 'pos',
@@ -49,7 +45,6 @@ export default function PinLoginPage() {
       })
       setUser(result.user)
       useAuthStore.setState({ isAuthenticated: true })
-      useTenantStore.setState({ slug: tenantSlug.trim() })
       toast.success(`Welcome, ${result.user.firstName}!`)
       navigate('/app/pos', { replace: true })
     } catch (err) {
@@ -66,19 +61,15 @@ export default function PinLoginPage() {
         <CardHeader className="text-center">
           <BrandLogo size="md" orientation="vertical" subtitle="POS PIN Login" className="mx-auto mb-2" />
           <CardTitle>Quick Staff Login</CardTitle>
-          <CardDescription>Enter employee code and PIN for {BRAND.name} POS</CardDescription>
+          <CardDescription>Enter your staff login ID and PIN for {BRAND.name} POS</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>Tenant</Label>
-            <Input value={tenantSlug} onChange={(e) => setTenantSlug(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label>Employee Code</Label>
+            <Label>Staff Login ID</Label>
             <Input
-              value={employeeCode}
-              onChange={(e) => setEmployeeCode(e.target.value)}
-              placeholder="e.g. 2001"
+              value={staffLoginId}
+              onChange={(e) => setStaffLoginId(e.target.value)}
+              placeholder="e.g. DH-7K2M9Q"
               className="bg-background"
             />
           </div>
@@ -115,9 +106,6 @@ export default function PinLoginPage() {
             Sign In with PIN
           </Button>
 
-          <p className="text-center text-xs text-muted-foreground">
-            Demo cashier: 2001 / PIN 4321
-          </p>
           <Button type="button" variant="ghost" className="w-full text-muted-foreground" onClick={() => navigate('/login')}>
             Use email login instead
           </Button>

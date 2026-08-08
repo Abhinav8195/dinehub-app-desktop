@@ -19,6 +19,9 @@ const KEYS = {
   DEVICE_ID: 'deviceId'
 } as const
 
+// One-time migration from releases that treated a restaurant slug as auth state.
+secureStore.delete(KEYS.TENANT_SLUG)
+
 export function getAccessToken(): string | null {
   return readSecret(KEYS.ACCESS_TOKEN)
 }
@@ -38,11 +41,11 @@ export function clearTokens(): void {
 }
 
 export function getTenantSlug(): string | null {
-  return (secureStore.get(KEYS.TENANT_SLUG) as string) ?? null
+  return null
 }
 
-export function setTenantSlug(slug: string): void {
-  secureStore.set(KEYS.TENANT_SLUG, slug)
+export function setTenantSlug(_slug: string): void {
+  secureStore.delete(KEYS.TENANT_SLUG)
 }
 
 export function getDeviceId(): string {

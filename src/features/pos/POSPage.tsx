@@ -3,12 +3,13 @@ import { useDispatch, useSelector } from 'react-redux'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  Search, Star, Minus, Plus, Trash2, Pause, RotateCcw, Receipt
+  Search, Star, Minus, Plus, Trash2, Pause, RotateCcw, Receipt, Armchair, CheckCircle2
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import {
   addToCart, removeFromCart, updateQuantity, clearCart, replaceCartItem,
@@ -30,6 +31,7 @@ import type { RootState } from '@/store'
 import type { MenuItemDto } from '@/api/types/pos.types'
 import type { PosOrder } from '@/api/types/pos.types'
 import type { OrderItem } from '@/types'
+import { settingsApi } from '@/api/settings.api'
 
 export default function POSPage() {
   const dispatch = useDispatch()
@@ -43,6 +45,7 @@ export default function POSPage() {
   const [editingLine, setEditingLine] = useState<OrderItem | null>(null)
 
   const { data: taxSettings } = useTaxSettings()
+  const { data: restaurant } = useQuery({ queryKey: ['settings', 'restaurant'], queryFn: settingsApi.getRestaurant })
 
   const { data: categories = [] } = useQuery({
     queryKey: ['menu-categories'],
@@ -85,6 +88,10 @@ export default function POSPage() {
   const breakdown = calculateTaxBreakdown(subtotal, taxSettings ?? DEFAULT_TAX_SETTINGS)
 
   const handleAddItem = (item: MenuItemDto) => {
+    if (orderType === 'dine-in' && !selectedTableId) {
+      toast.error('Please select a table before adding items')
+      return
+    }
     if (item.modifierGroups?.some((group) => group.isActive)) {
       setEditingLine(null)
       setModifierItem(item)
@@ -131,11 +138,30 @@ export default function POSPage() {
     if (window.electronAPI?.printReceipt) {
       const html = buildReceiptHtml({
         orderNumber,
+        invoiceNumber: (serverOrder as (PosOrder & { invoiceNumber?: string }) | undefined)?.invoiceNumber,
+        restaurant: {
+          name: String(restaurant?.name || BRAND.name),
+          logoUrl: typeof restaurant?.logoUrl === 'string' ? restaurant.logoUrl : undefined,
+          showLogo: restaurant?.receiptLogoEnabled !== false,
+          address: typeof restaurant?.address === 'string' ? restaurant.address : undefined,
+          phone: typeof restaurant?.phone === 'string' ? restaurant.phone : undefined,
+          gstin: typeof restaurant?.gstin === 'string' ? restaurant.gstin : undefined,
+        },
+        customerName: serverOrder?.customer?.name,
+        table: serverOrder?.table?.label,
+        orderType: orderType === 'dine-in' ? 'Dine In' : 'Takeaway',
         items: cart.map((i) => ({ name: i.name, qty: i.quantity, price: i.price })),
         subtotal: finalSubtotal,
-        tax: finalTax,
+        taxes: serverOrder ? [
+          { name: 'GST', rate: taxSettings?.gstPercent, amount: serverOrder.gstAmount },
+          { name: 'SGST', rate: taxSettings?.sgstPercent, amount: serverOrder.sgstAmount },
+          { name: 'CGST', rate: taxSettings?.cgstPercent, amount: serverOrder.cgstAmount },
+        ].filter((tax) => tax.amount > 0) : [{ name: 'Tax', amount: finalTax }],
+        discount: serverOrder?.discount,
         total,
         paymentMethod,
+        footerText: typeof restaurant?.receiptFooter === 'string' ? restaurant.receiptFooter : undefined,
+        date: serverOrder?.createdAt,
       })
       window.electronAPI.printReceipt(html).catch(() => {})
     }
@@ -149,7 +175,7 @@ export default function POSPage() {
   return (
     <div className="flex h-full min-h-0 overflow-hidden bg-background">
       {/* Left - Category Sidebar */}
-      <div className="w-[100px] md:w-[120px] flex flex-col border-r bg-card shrink-0">
+      <div className="w-[76px] xl:w-[104px] flex flex-col border-r bg-card shrink-0">
         <div className="p-3 border-b flex flex-col items-center gap-1">
           <BrandLogo size="xs" showText={false} />
           <p className="text-[10px] font-bold text-center leading-tight">{BRAND.name}</p>
@@ -193,13 +219,28 @@ export default function POSPage() {
             <h1 className="text-xl font-bold">{catalogView === 'combos' ? 'Combos' : 'Products Menu'}</h1>
             <p className="text-xs text-muted-foreground">Select items to add to order</p>
           </div>
-          <Tabs value={orderType} onValueChange={(v) => dispatch(setOrderType(v as typeof orderType))}>
-            <TabsList>
-              <TabsTrigger value="dine-in">Dine In</TabsTrigger>
-              <TabsTrigger value="takeaway">Takeaway</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="flex items-center gap-2">
+            <Tabs value={orderType} onValueChange={(v) => { dispatch(setOrderType(v as typeof orderType)); dispatch(setSelectedTable(null)) }}>
+              <TabsList><TabsTrigger value="dine-in">Dine In</TabsTrigger><TabsTrigger value="takeaway">Takeaway</TabsTrigger></TabsList>
+            </Tabs>
+          </div>
         </div>
+
+        {orderType === 'dine-in' && <div className={cn('flex items-center justify-between gap-4 border-b px-4 py-3', selectedTableId ? 'bg-success/10' : 'bg-primary/10')}>
+          <div className="flex min-w-0 items-center gap-3">
+            <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', selectedTableId ? 'bg-success text-white' : 'bg-primary text-primary-foreground')}>
+              {selectedTableId ? <CheckCircle2 className="h-5 w-5" /> : <Armchair className="h-5 w-5" />}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2"><Badge variant={selectedTableId ? 'success' : 'warning'}>Step 1</Badge><p className="font-semibold">{selectedTableId ? 'Table selected' : 'Choose a table first'}</p></div>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">{selectedTableId ? 'You can now add items to this dine-in order.' : 'Dine-in items stay locked until a table is selected.'}</p>
+            </div>
+          </div>
+          <Select value={selectedTableId || ''} onValueChange={(value) => dispatch(setSelectedTable(value))}>
+            <SelectTrigger className={cn('h-11 w-[210px] shrink-0 bg-card font-semibold shadow-sm', !selectedTableId && 'border-primary ring-2 ring-primary/20')}><SelectValue placeholder="Select table" /></SelectTrigger>
+            <SelectContent>{tables.filter((table) => table.status === 'available' || table.id === selectedTableId).map((table) => <SelectItem key={table.id} value={table.id}>Table {table.number} · {table.floor} · {table.capacity} seats</SelectItem>)}</SelectContent>
+          </Select>
+        </div>}
 
         <div className="p-4 border-b shrink-0">
           <div className="relative">
@@ -213,8 +254,8 @@ export default function POSPage() {
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto p-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="flex-1 min-h-0 overflow-y-auto p-2.5 xl:p-4">
+          <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-2.5 xl:gap-3">
             {catalogView === 'items' ? filteredItems.map((item) => (
               <div
                 key={item.id}
@@ -225,7 +266,7 @@ export default function POSPage() {
                     <Star className="h-2.5 w-2.5 mr-0.5" /> Popular
                   </Badge>
                 )}
-                <div className="relative flex h-24 items-center justify-center overflow-hidden bg-muted/50 text-4xl">
+                <div className="relative flex h-16 xl:h-24 items-center justify-center overflow-hidden bg-muted/50 text-3xl xl:text-4xl">
                   <span aria-hidden>
                     {categories.find((c) => c.id === item.categoryId)?.icon || categories.find((c) => c.name === item.category)?.icon || '🍽️'}
                   </span>
@@ -239,7 +280,7 @@ export default function POSPage() {
                     />
                   )}
                 </div>
-                <div className="p-3 flex-1 flex flex-col">
+                <div className="p-2 xl:p-3 flex-1 flex flex-col">
                   <p className="text-sm font-semibold leading-tight">{item.name}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{item.category}</p>
                   <p className="text-base font-bold text-primary mt-2">{formatCurrency(item.price)}</p>
@@ -247,7 +288,7 @@ export default function POSPage() {
                     {orderType === 'dine-in' && <Badge variant="outline" className="text-[9px]">Dine in</Badge>}
                     {orderType === 'takeaway' && <Badge variant="outline" className="text-[9px]">Pick Up</Badge>}
                   </div>
-                  <Button type="button" size="sm" className="mt-3 w-full" onClick={() => handleAddItem(item)}>
+                  <Button type="button" size="sm" className="mt-3 w-full" disabled={orderType === 'dine-in' && !selectedTableId} onClick={() => handleAddItem(item)}>
                     Add to Cart
                   </Button>
                 </div>
@@ -259,7 +300,7 @@ export default function POSPage() {
                   {combo.imageUrl && <img src={resolveMenuImageUrl(combo.imageUrl) ?? ''} alt={combo.name} className="absolute inset-0 h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
                 </div>
                 <div className="p-3 flex-1 flex flex-col"><p className="text-sm font-semibold">{combo.name}</p><p className="text-xs text-muted-foreground">{combo.items.map((entry) => `${entry.quantity}× ${entry.menuItem?.name ?? 'item'}`).join(', ')}</p><p className="text-base font-bold text-primary mt-2">{formatCurrency(combo.price)}</p>
-                  <Button type="button" size="sm" className="mt-auto w-full" onClick={() => { dispatch(addToCart({ id: combo.id, lineKey: `combo:${combo.id}`, comboId: combo.id, name: combo.name, price: combo.price, quantity: 1 })); toast.success(`Added ${combo.name}`) }}>Add Combo</Button>
+                  <Button type="button" size="sm" className="mt-auto w-full" disabled={orderType === 'dine-in' && !selectedTableId} onClick={() => { if (orderType === 'dine-in' && !selectedTableId) { toast.error('Please select a table before adding items'); return }; dispatch(addToCart({ id: combo.id, lineKey: `combo:${combo.id}`, comboId: combo.id, name: combo.name, price: combo.price, quantity: 1 })); toast.success(`Added ${combo.name}`) }}>Add Combo</Button>
                 </div>
               </div>
             ))}
@@ -268,7 +309,7 @@ export default function POSPage() {
       </div>
 
       {/* Right - Cart */}
-      <div className="w-[340px] flex flex-col bg-card shrink-0 min-h-0 border-l">
+      <div className="w-[286px] xl:w-[340px] flex flex-col bg-card shrink-0 min-h-0 border-l">
         <div className="p-4 border-b shrink-0">
           <h2 className="font-semibold">Ordered Items</h2>
         </div>
