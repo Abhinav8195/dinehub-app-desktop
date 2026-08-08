@@ -51,6 +51,8 @@ export interface MenuItemDto {
   available: boolean
   popular: boolean
   modifierGroups: import('./catalog.types').ModifierGroup[]
+  hasVariants?: boolean
+  variants?: import('./menu.types').MenuItemVariant[]
 }
 
 export interface TableDto {
@@ -79,6 +81,7 @@ export interface CreateTableRequest {
 
 export interface OrderItemRequest {
   menuItemId?: string
+  variantId?: string
   comboId?: string
   modifierOptionIds?: string[]
   name?: string
@@ -136,6 +139,8 @@ export interface PosOrder {
   items: Array<{
     id: string
     menuItemId?: string | null
+    variantId?: string | null
+    variantName?: string | null
     comboId?: string | null
     name: string
     quantity: number

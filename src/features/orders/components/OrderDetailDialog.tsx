@@ -73,7 +73,7 @@ export function OrderDetailDialog({ order, open, onOpenChange }: OrderDetailDial
             <div className="space-y-2">
               {order.items.map((item) => (
                 <div key={item.id} className="flex justify-between gap-3 text-sm">
-                  <div><span>{item.name} × {item.quantity}</span>{item.comboId && <Badge className="ml-2" variant="secondary">Combo</Badge>}
+                  <div><span>{item.name}{item.variantName ? ` (${item.variantName})` : ''} × {item.quantity}</span>{item.comboId && <Badge className="ml-2" variant="secondary">Combo</Badge>}
                     {item.modifiers?.map((modifier) => <p key={modifier.id} className="text-xs text-muted-foreground">{modifier.groupName}: {modifier.name} {modifier.price ? `(+${formatCurrency(modifier.price)})` : ''}</p>)}
                   </div>
                   <span className="font-medium">{formatCurrency(item.total)}</span>

@@ -87,7 +87,7 @@ export default function OrdersPage() {
     onError: (error: Error) => toast.error(error.message || 'Unable to update order'),
   })
   const deleteOrder = useMutation({
-    mutationFn: (id: string) => ordersApi.delete(id),
+    mutationFn: (id: string) => ordersApi.delete(id, true),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Order deleted') },
     onError: (error: Error) => toast.error(error.message || 'Unable to delete order'),
   })
@@ -127,7 +127,7 @@ export default function OrdersPage() {
       customerName: order.customer?.name || 'Walk-in', table: order.table?.label,
       orderType: order.type.replaceAll('_', ' ').replaceAll('-', ' '),
       cashierName: typeof (order as PosOrder & { cashierName?: string }).cashierName === 'string' ? (order as PosOrder & { cashierName?: string }).cashierName : undefined,
-      items: order.items.map((item) => ({ name: item.name, qty: item.quantity, price: item.price, amount: item.total })),
+      items: order.items.map((item) => ({ name: `${item.name}${item.variantName ? ` (${item.variantName})` : ''}`, qty: item.quantity, price: item.price, amount: item.total })),
       subtotal: order.subtotal,
       taxes: [
         { name: 'GST', rate: taxSettings?.gstPercent, amount: order.gstAmount },
@@ -210,7 +210,11 @@ export default function OrdersPage() {
           <Printer className="h-4 w-4" />
         </Button>
         <Button type="button" variant="ghost" size="icon" className="text-danger hover:text-danger" disabled={deleteOrder.isPending} onClick={() => {
-          if (window.confirm(`Delete order ${row.original.orderNumber}? This action cannot be undone.`)) deleteOrder.mutate(row.original.id)
+          const protectedOrder = ['paid', 'completed'].includes(row.original.status.toLowerCase())
+          const warning = protectedOrder
+            ? `Permanently delete ${row.original.status} order ${row.original.orderNumber}? This removes its sales record and cannot be undone.`
+            : `Delete order ${row.original.orderNumber}? This action cannot be undone.`
+          if (window.confirm(warning)) deleteOrder.mutate(row.original.id)
         }} title="Delete order">
           <Trash2 className="h-4 w-4" />
         </Button>

@@ -37,6 +37,8 @@ export const ordersApi = {
       apiClient.patch<ApiResponse<PosOrder>>(`/orders/${id}/status`, { status }),
     ),
 
-  delete: (id: string) =>
-    unwrap(apiClient.delete<ApiResponse<null>>(`/orders/${id}`)),
+  delete: (id: string, force = false) =>
+    unwrap(apiClient.delete<ApiResponse<null>>(`/orders/${id}`, {
+      params: force ? { force: true } : undefined,
+    })),
 }

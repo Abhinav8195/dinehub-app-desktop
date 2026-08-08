@@ -32,6 +32,7 @@ import type { MenuItemDto } from '@/api/types/pos.types'
 import type { PosOrder } from '@/api/types/pos.types'
 import type { OrderItem } from '@/types'
 import { settingsApi } from '@/api/settings.api'
+import { effectiveVariantPrice } from '@/features/menu/variants'
 
 export default function POSPage() {
   const dispatch = useDispatch()
@@ -92,7 +93,7 @@ export default function POSPage() {
       toast.error('Please select a table before adding items')
       return
     }
-    if (item.modifierGroups?.some((group) => group.isActive)) {
+    if (item.hasVariants || item.modifierGroups?.some((group) => group.isActive)) {
       setEditingLine(null)
       setModifierItem(item)
       return
@@ -150,7 +151,7 @@ export default function POSPage() {
         customerName: serverOrder?.customer?.name,
         table: serverOrder?.table?.label,
         orderType: orderType === 'dine-in' ? 'Dine In' : 'Takeaway',
-        items: cart.map((i) => ({ name: i.name, qty: i.quantity, price: i.price })),
+        items: cart.map((i) => ({ name: `${i.name}${i.variantName ? ` (${i.variantName})` : ''}`, qty: i.quantity, price: i.price })),
         subtotal: finalSubtotal,
         taxes: serverOrder ? [
           { name: 'GST', rate: taxSettings?.gstPercent, amount: serverOrder.gstAmount },
@@ -283,7 +284,7 @@ export default function POSPage() {
                 <div className="p-2 xl:p-3 flex-1 flex flex-col">
                   <p className="text-sm font-semibold leading-tight">{item.name}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{item.category}</p>
-                  <p className="text-base font-bold text-primary mt-2">{formatCurrency(item.price)}</p>
+                  <p className="text-base font-bold text-primary mt-2">{item.hasVariants && item.variants?.some((variant) => variant.isAvailable) ? `Starting from ${formatCurrency(Math.min(...item.variants.filter((variant) => variant.isAvailable).map(effectiveVariantPrice)))}` : formatCurrency(item.price)}</p>
                   <div className="flex flex-wrap gap-1 mt-2">
                     {orderType === 'dine-in' && <Badge variant="outline" className="text-[9px]">Dine in</Badge>}
                     {orderType === 'takeaway' && <Badge variant="outline" className="text-[9px]">Pick Up</Badge>}
@@ -328,6 +329,7 @@ export default function POSPage() {
                   <div className="flex justify-between items-start gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium">{item.name}</p>
+                      {item.variantName && <p className="text-[11px] font-medium text-primary">{item.variantName}</p>}
                       {item.comboId && <Badge variant="secondary" className="text-[9px]">Combo</Badge>}
                       {item.modifiers?.map((modifier) => <p key={modifier.id} className="text-[11px] text-muted-foreground">{modifier.groupName}: {modifier.name}</p>)}
                       <p className="text-xs text-muted-foreground">{formatCurrency(item.price)} each</p>
@@ -351,7 +353,7 @@ export default function POSPage() {
                       Remove
                     </button>
                   </div>
-                  {item.modifiers && item.modifiers.length > 0 && <button type="button" className="mt-2 text-xs text-primary hover:underline" onClick={() => editModifiers(item)}>Edit modifiers</button>}
+                  {(item.variantId || (item.modifiers && item.modifiers.length > 0)) && <button type="button" className="mt-2 text-xs text-primary hover:underline" onClick={() => editModifiers(item)}>Edit options</button>}
                 </div>
               ))}
             </div>
