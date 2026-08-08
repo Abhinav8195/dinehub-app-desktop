@@ -19,6 +19,8 @@ import type { Category, MenuItem } from '@/api/types/menu.types'
 import { formatCurrency } from '@/lib/utils'
 import { useMenuManagement } from './useMenuManagement'
 import { ImageUploadField } from './components/ImageUploadField'
+import { VariantEditor } from './components/VariantEditor'
+import { effectiveVariantPrice, emptyVariant, validateVariants, type VariantDraft, type VariantErrors } from './variants'
 
 interface ItemForm {
   categoryId: string
@@ -28,11 +30,13 @@ interface ItemForm {
   imageUrl: string
   isAvailable: boolean
   isPopular: boolean
+  hasVariants: boolean
+  variants: VariantDraft[]
 }
 
 const emptyItem = (categoryId = ''): ItemForm => ({
   categoryId, name: '', description: '', price: '0', imageUrl: '',
-  isAvailable: true, isPopular: false
+  isAvailable: true, isPopular: false, hasVariants: false, variants: []
 })
 
 function errorMessage(error: unknown): string {
@@ -40,6 +44,19 @@ function errorMessage(error: unknown): string {
   if (Array.isArray(error.errors)) return error.errors.join(', ') || error.message
   if (error.errors) return Object.values(error.errors).flat().join(', ') || error.message
   return error.message
+}
+
+function apiVariantErrors(error: unknown): VariantErrors {
+  if (!(error instanceof ApiError) || !error.errors || Array.isArray(error.errors)) return {}
+  const result: VariantErrors = {}
+  Object.entries(error.errors).forEach(([field, messages]) => {
+    const match = field.match(/^variants(?:\.|\[)(\d+)(?:\]|\.)\.?([A-Za-z]+)$/)
+    if (!match) return
+    const key = match[2] as 'name' | 'price' | 'discountedPrice'
+    if (!['name', 'price', 'discountedPrice'].includes(key)) return
+    result[Number(match[1])] = { ...result[Number(match[1])], [key]: messages.join(', ') }
+  })
+  return result
 }
 
 export default function MenuPage() {
@@ -54,6 +71,7 @@ export default function MenuPage() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'item' | 'category'; id: string; name: string } | null>(null)
   const [itemForm, setItemForm] = useState<ItemForm>(emptyItem())
+  const [variantErrors, setVariantErrors] = useState<VariantErrors>({})
   const [categoryForm, setCategoryForm] = useState({ name: '', icon: '', sortOrder: '0', imageUrl: '' })
   const [itemImageUploading, setItemImageUploading] = useState(false)
   const [categoryImageUploading, setCategoryImageUploading] = useState(false)
@@ -74,6 +92,7 @@ export default function MenuPage() {
     if (!categories.length) return toast.error('Create a category first')
     setEditingItem(null)
     setItemForm(emptyItem(selectedCategory ?? categories[0].id))
+    setVariantErrors({})
     setItemDialog(true)
   }
 
@@ -86,8 +105,15 @@ export default function MenuPage() {
       price: String(item.price),
       imageUrl: item.imageUrl ?? '',
       isAvailable: item.available,
-      isPopular: item.popular
+      isPopular: item.popular,
+      hasVariants: item.hasVariants ?? Boolean(item.variants?.length),
+      variants: (item.variants ?? []).map((variant) => ({
+        id: variant.id, name: variant.name, price: String(variant.price),
+        discountedPrice: variant.discountedPrice == null ? '' : String(variant.discountedPrice),
+        isAvailable: variant.isAvailable, isDefault: variant.isDefault
+      }))
     })
+    setVariantErrors({})
     setItemDialog(true)
   }
 
@@ -95,15 +121,24 @@ export default function MenuPage() {
     const price = Number(itemForm.price)
     if (!itemForm.name.trim()) return toast.error('Item name is required')
     if (!itemForm.categoryId) return toast.error('Select a category')
-    if (!Number.isFinite(price) || price < 0) return toast.error('Price must be a number of at least zero')
+    if (!itemForm.hasVariants && (!Number.isFinite(price) || price < 0)) return toast.error('Price must be a number of at least zero')
+    const errors = itemForm.hasVariants ? validateVariants(itemForm.variants) : {}
+    setVariantErrors(errors)
+    if (Object.keys(errors).length) return toast.error('Review the highlighted variant fields')
     const body = {
       categoryId: itemForm.categoryId,
       name: itemForm.name.trim(),
       description: itemForm.description.trim() || undefined,
-      price,
+      ...(itemForm.hasVariants ? {} : { price }),
       imageUrl: itemForm.imageUrl.trim() || undefined,
       isAvailable: itemForm.isAvailable,
-      isPopular: itemForm.isPopular
+      isPopular: itemForm.isPopular,
+      hasVariants: itemForm.hasVariants,
+      variants: itemForm.hasVariants ? itemForm.variants.map((variant, sortOrder) => ({
+        ...(variant.id ? { id: variant.id } : {}), name: variant.name.trim(), price: Number(variant.price),
+        discountedPrice: variant.discountedPrice === '' ? null : Number(variant.discountedPrice),
+        isAvailable: variant.isAvailable, isDefault: variant.isDefault, sortOrder
+      })) : []
     }
     try {
       if (editingItem) await menu.updateItem.mutateAsync({ id: editingItem.id, body })
@@ -111,6 +146,8 @@ export default function MenuPage() {
       setItemDialog(false)
       toast.success(editingItem ? 'Menu item updated' : 'Menu item created')
     } catch (error) {
+      const fieldErrors = apiVariantErrors(error)
+      if (Object.keys(fieldErrors).length) setVariantErrors(fieldErrors)
       toast.error(errorMessage(error))
     }
   }
@@ -260,7 +297,7 @@ export default function MenuPage() {
                           {item.popular && <Badge className="absolute right-3 top-3" variant="warning"><Star className="mr-1 h-3 w-3" /> Popular</Badge>}
                         </div>
                         <CardContent className="p-4">
-                          <div className="flex justify-between gap-3"><div className="min-w-0"><p className="truncate font-semibold">{item.name}</p><p className="text-xs text-muted-foreground">{item.category}</p></div><p className="font-bold text-primary">{formatCurrency(item.price)}</p></div>
+                          <div className="flex justify-between gap-3"><div className="min-w-0"><p className="truncate font-semibold">{item.name}</p><p className="text-xs text-muted-foreground">{item.category}</p></div><p className="text-right font-bold text-primary">{item.hasVariants && item.variants?.some((variant) => variant.isAvailable) ? <><span className="block text-[10px] font-normal text-muted-foreground">Starting from</span>{formatCurrency(Math.min(...item.variants.filter((variant) => variant.isAvailable).map(effectiveVariantPrice)))}</> : formatCurrency(item.price)}</p></div>
                           <div className="mt-4 flex items-center gap-1">
                             <Switch checked={item.available} aria-label={`Availability for ${item.name}`} onCheckedChange={async (checked) => {
                               try {
@@ -284,13 +321,15 @@ export default function MenuPage() {
         </Tabs>
 
         <Dialog open={itemDialog} onOpenChange={setItemDialog}>
-          <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
             <DialogHeader><DialogTitle>{editingItem ? 'Edit menu item' : 'Add menu item'}</DialogTitle><DialogDescription>Availability and popularity are saved using the API write model.</DialogDescription></DialogHeader>
             <div className="space-y-3">
               <div><Label>Category</Label><Select value={itemForm.categoryId} onValueChange={(categoryId) => setItemForm((form) => ({ ...form, categoryId }))}><SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger><SelectContent>{categories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select></div>
               <div><Label>Name</Label><Input value={itemForm.name} onChange={(event) => setItemForm((form) => ({ ...form, name: event.target.value }))} /></div>
               <div><Label>Description</Label><Input value={itemForm.description} onChange={(event) => setItemForm((form) => ({ ...form, description: event.target.value }))} /></div>
-              <div><Label>Price</Label><Input type="number" min="0" step="0.01" value={itemForm.price} onChange={(event) => setItemForm((form) => ({ ...form, price: event.target.value }))} /></div>
+              <label className="flex items-center justify-between rounded-lg border p-3"><span><span className="block font-medium">Has variants</span><span className="text-xs text-muted-foreground">Use separate sizes, portions, or prices.</span></span><Switch checked={itemForm.hasVariants} onCheckedChange={(hasVariants) => setItemForm((form) => ({ ...form, hasVariants, variants: hasVariants && !form.variants.length ? [{ ...emptyVariant(), isDefault: true }] : form.variants }))} /></label>
+              {!itemForm.hasVariants && <div><Label>Price</Label><Input type="number" min="0" step="0.01" value={itemForm.price} onChange={(event) => setItemForm((form) => ({ ...form, price: event.target.value }))} /></div>}
+              {itemForm.hasVariants && <VariantEditor value={itemForm.variants} errors={variantErrors} onChange={(variants) => { setItemForm((form) => ({ ...form, variants })); setVariantErrors({}) }} />}
               <ImageUploadField
                 key={`item-${editingItem?.id ?? 'new'}`}
                 kind="item"
@@ -324,7 +363,7 @@ export default function MenuPage() {
         </Dialog>
 
         <Dialog open={Boolean(detail)} onOpenChange={(open) => !open && setDetail(null)}>
-          <DialogContent>{detail && <><DialogHeader><DialogTitle>{detail.name}</DialogTitle><DialogDescription>{detail.category} · {formatCurrency(detail.price)}</DialogDescription></DialogHeader><p className="text-sm">{detail.description || 'No description.'}</p><div className="flex gap-2"><Badge variant={detail.available ? 'success' : 'secondary'}>{detail.available ? 'Available' : 'Unavailable'}</Badge>{detail.popular && <Badge variant="warning">Popular</Badge>}</div></>}</DialogContent>
+          <DialogContent>{detail && <><DialogHeader><DialogTitle>{detail.name}</DialogTitle><DialogDescription>{detail.category}{!detail.hasVariants && ` · ${formatCurrency(detail.price)}`}</DialogDescription></DialogHeader><p className="text-sm">{detail.description || 'No description.'}</p>{detail.hasVariants && <div className="space-y-2">{detail.variants?.map((variant) => <div key={variant.id} className="flex justify-between rounded-lg border p-2 text-sm"><span>{variant.name}{variant.isDefault ? ' · Default' : ''}</span><span>{formatCurrency(effectiveVariantPrice(variant))}</span></div>)}</div>}<div className="flex gap-2"><Badge variant={detail.available ? 'success' : 'secondary'}>{detail.available ? 'Available' : 'Unavailable'}</Badge>{detail.popular && <Badge variant="warning">Popular</Badge>}</div></>}</DialogContent>
         </Dialog>
 
         <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>

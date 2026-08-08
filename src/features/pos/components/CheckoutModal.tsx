@@ -126,6 +126,7 @@ export function CheckoutModal({
         items: cart.map((item) => ({
           ...(item.menuItemId ? {
             menuItemId: item.menuItemId,
+            variantId: item.variantId,
             modifierOptionIds: item.modifiers?.map((modifier) => modifier.id) ?? [],
           } : item.comboId ? {
             comboId: item.comboId,

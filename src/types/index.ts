@@ -32,6 +32,8 @@ export interface OrderItem {
   id: string
   lineKey: string
   menuItemId?: string
+  variantId?: string
+  variantName?: string
   comboId?: string
   name: string
   quantity: number

@@ -22,7 +22,11 @@ const mapMenuItem = (item: MenuItem): MenuItem => ({
   ...item,
   available: item.available,
   popular: item.popular,
-  modifierGroups: item.modifierGroups ?? []
+  modifierGroups: item.modifierGroups ?? [],
+  ...(item.hasVariants !== undefined || item.variants !== undefined ? {
+    hasVariants: item.hasVariants ?? Boolean(item.variants?.length),
+    variants: (item.variants ?? []).slice().sort((a, b) => a.sortOrder - b.sortOrder)
+  } : {})
 })
 
 export const categoryService = {

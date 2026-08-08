@@ -36,16 +36,40 @@ export interface MenuItem {
   available: boolean
   popular: boolean
   modifierGroups: ModifierGroup[]
+  hasVariants?: boolean
+  variants?: MenuItemVariant[]
+}
+
+export interface MenuItemVariant {
+  id: string
+  name: string
+  price: number
+  discountedPrice?: number | null
+  isAvailable: boolean
+  isDefault: boolean
+  sortOrder: number
+}
+
+export interface MenuItemVariantInput {
+  id?: string
+  name: string
+  price: number
+  discountedPrice?: number | null
+  isAvailable: boolean
+  isDefault: boolean
+  sortOrder: number
 }
 
 export interface CreateMenuItemBody {
   categoryId: string
   name: string
   description?: string
-  price: number
+  price?: number
   imageUrl?: string
   isAvailable?: boolean
   isPopular?: boolean
+  hasVariants?: boolean
+  variants?: MenuItemVariantInput[]
 }
 
 export interface UpdateMenuItemBody {
@@ -56,6 +80,8 @@ export interface UpdateMenuItemBody {
   imageUrl?: string
   isAvailable?: boolean
   isPopular?: boolean
+  hasVariants?: boolean
+  variants?: MenuItemVariantInput[]
 }
 
 export interface BulkAvailabilityBody {
