@@ -30,6 +30,7 @@ import InventoryPage from '@/features/inventory/InventoryPage'
 import PurchasePage from '@/features/purchase/PurchasePage'
 import CustomersPage from '@/features/customers/CustomersPage'
 import EmployeesPage from '@/features/employees/EmployeesPage'
+import AttendancePage from '@/features/attendance/AttendancePage'
 import StaffPage from '@/features/staff/StaffPage'
 import ReservationsPage from '@/features/reservations/ReservationsPage'
 import ReportsPage from '@/features/reports/ReportsPage'
@@ -78,6 +79,7 @@ function buildRoutes(): RouteObject[] {
             { index: true, element: featurePage('DASHBOARD', <DashboardPage />, 'dashboard.view') },
             { path: 'pos', element: featurePage('POS', <POSPage />, 'pos.access') },
             { path: 'orders', element: featurePage('ORDERS', <OrdersPage />, 'orders.view') },
+            { path: 'orders/sales', element: featurePage('ORDERS', <AnalyticsPage />, 'orders.view') },
             { path: 'tables', element: featurePage('TABLE_MANAGEMENT', <TablesPage />, 'tables.view') },
             { path: 'qr-ordering', element: featurePage('QR_ORDERING', <QROrderingPage />, 'qr.view') },
             { path: 'kitchen', element: featurePage('KOT_KITCHEN', <KitchenPage />, 'kitchen.view') },
@@ -104,6 +106,7 @@ function buildRoutes(): RouteObject[] {
             { path: 'users/invites', element: featurePage('INVITATIONS', <UsersManagementPage />, 'users.invites.view') },
             { path: 'users/audit', element: featurePage('AUDIT_LOGS', <UsersManagementPage />, 'audit.view') },
             { path: 'employees', element: featurePage('EMPLOYEES', <EmployeesPage />, 'employees.view') },
+            { path: 'employees/attendance', element: featurePage('EMPLOYEES', <AttendancePage />, 'employees.view') },
             { path: 'staff', element: featurePage('STAFF_PERMISSIONS', <StaffPage />, 'staff.view') },
             { path: 'reservations', element: featurePage('RESERVATIONS', <ReservationsPage />, 'reservations.view') },
             { path: 'reports', element: featurePage('REPORTS', <ReportsPage />, 'reports.view') },

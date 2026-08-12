@@ -18,23 +18,46 @@ import { cn } from '@/lib/utils'
 import type { RootState } from '@/store'
 import { useQuery } from '@tanstack/react-query'
 import { settingsApi } from '@/api/settings.api'
+import { dashboardApi } from '@/api/dashboard.api'
+import { useAuth } from '@/hooks/useAuth'
 
 export function Sidebar() {
   const location = useLocation()
   const dispatch = useDispatch()
-  const { sidebarCollapsed, favorites, pinnedMenus } = useSelector((s: RootState) => s.app)
+  const { sidebarCollapsed, favorites, pinnedMenus, selectedRestaurantId } = useSelector((s: RootState) => s.app)
+  const unreadCount = useSelector((s: RootState) => s.notifications.unreadCount)
+  const { user } = useAuth()
   const { permissions, roles, isSuperAdmin } = usePermissions()
   const { hasFeature } = useFeatureAccess()
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string[]>(['menu', 'inventory', 'users'])
   const { data: restaurant } = useQuery({ queryKey: ['settings', 'restaurant'], queryFn: settingsApi.getRestaurant, staleTime: 60_000 })
   const kotEnabled = restaurant?.kotEnabled !== false
+  const tenantId = user?.isSuperAdmin || user?.userType === 'SUPER_ADMIN'
+    ? selectedRestaurantId
+    : user?.tenantId
+  const { data: dashboard } = useQuery({
+    queryKey: ['dashboard', 'stats', tenantId],
+    queryFn: () => dashboardApi.getStats(tenantId),
+    enabled: Boolean(tenantId),
+    refetchInterval: 30_000,
+  })
+
+  const navigationWithLiveBadges = useMemo(() => NAVIGATION.map((item) => {
+    let badge = item.badge
+    if (item.id === 'orders') badge = dashboard?.stats.orders.value || undefined
+    if (item.id === 'kitchen') badge = dashboard?.kitchenQueue || undefined
+    if (item.id === 'reservations') badge = dashboard?.tables.reserved || undefined
+    if (item.id === 'notifications') badge = unreadCount || undefined
+    if (item.id === 'inventory') badge = undefined
+    return badge === item.badge ? item : { ...item, badge }
+  }), [dashboard, unreadCount])
 
   const canSee = (item: NavItem) =>
     canAccessNav(item.permission, permissions, roles, isSuperAdmin, item.superAdminOnly)
 
   const allVisible = useMemo(() => {
-    const visible = filterNavigation(NAVIGATION, { canPermission: canSee, hasFeature })
+    const visible = filterNavigation(navigationWithLiveBadges, { canPermission: canSee, hasFeature })
       .filter((item) => kotEnabled || item.id !== 'kitchen')
     const query = search.trim().toLowerCase()
     if (!query) return visible
@@ -44,7 +67,7 @@ export function Sidebar() {
       const matchingChildren = item.children?.filter((child) => child.title.toLowerCase().includes(query))
       return matchingChildren?.length ? [{ ...item, children: matchingChildren }] : []
     })
-  }, [search, permissions, roles, isSuperAdmin, hasFeature, kotEnabled])
+  }, [search, permissions, roles, isSuperAdmin, hasFeature, kotEnabled, navigationWithLiveBadges])
   const pinnedIds = new Set(pinnedMenus)
   const favoriteIds = new Set(favorites)
 
@@ -183,11 +206,11 @@ export function Sidebar() {
   return (
     <TooltipProvider delayDuration={0}>
       <motion.aside
-        animate={{ width: sidebarCollapsed ? 72 : 280 }}
+        animate={{ width: sidebarCollapsed ? 56 : 232 }}
         transition={{ duration: 0.2, ease: 'easeInOut' }}
         className="flex flex-col border-r border-sidebar-border bg-sidebar h-full shrink-0 z-20"
       >
-        <div className={cn('flex items-center h-16 px-4 border-b border-sidebar-border shrink-0', sidebarCollapsed && 'justify-center px-2')}>
+        <div className={cn('flex items-center h-16 px-3 border-b border-sidebar-border shrink-0', sidebarCollapsed && 'justify-center px-1')}>
           <BrandLogo size="sm" showText={!sidebarCollapsed} />
         </div>
 

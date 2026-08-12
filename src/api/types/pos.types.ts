@@ -132,6 +132,12 @@ export interface PosOrder {
   tax: number
   instructions?: string | null
   paymentMethod?: string | null
+  paymentStatus?: string | null
+  transactionId?: string | null
+  refundAmount?: number | null
+  deliveryAddress?: string | null
+  branchId?: string | null
+  branch?: { id: string; name: string } | null
   customerId?: string | null
   tableId?: string | null
   customer?: { id: string; name: string; email?: string | null; phone: string } | null
@@ -143,6 +149,7 @@ export interface PosOrder {
     variantName?: string | null
     comboId?: string | null
     name: string
+    imageUrl?: string | null
     quantity: number
     price: number
     total: number
@@ -157,6 +164,11 @@ export interface PosOrder {
   }>
   createdAt: string
   updatedAt: string
+  statusHistory?: Array<{
+    status: string
+    createdAt: string
+    note?: string | null
+  }>
 }
 
 export interface UpdateTaxSettingsRequest {

@@ -41,11 +41,11 @@ export function clearTokens(): void {
 }
 
 export function getTenantSlug(): string | null {
-  return null
+  return secureStore.get(KEYS.TENANT_SLUG) as string | null
 }
 
-export function setTenantSlug(_slug: string): void {
-  secureStore.delete(KEYS.TENANT_SLUG)
+export function setTenantSlug(slug: string): void {
+  secureStore.set(KEYS.TENANT_SLUG, slug)
 }
 
 export function getDeviceId(): string {

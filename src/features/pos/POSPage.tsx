@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -34,6 +34,20 @@ import type { OrderItem } from '@/types'
 import { settingsApi } from '@/api/settings.api'
 import { effectiveVariantPrice } from '@/features/menu/variants'
 
+const CART_WIDTH_KEY = 'dinehub:pos-cart-width'
+const MIN_CART_WIDTH = 240
+const MAX_CART_WIDTH = 420
+
+const getInitialCartWidth = () => {
+  if (typeof window === 'undefined') return 280
+  const storedValue = window.localStorage.getItem(CART_WIDTH_KEY)
+  if (storedValue === null) return 280
+  const storedWidth = Number(storedValue)
+  return Number.isFinite(storedWidth)
+    ? Math.min(MAX_CART_WIDTH, Math.max(MIN_CART_WIDTH, storedWidth))
+    : 280
+}
+
 export default function POSPage() {
   const dispatch = useDispatch()
   const queryClient = useQueryClient()
@@ -44,6 +58,35 @@ export default function POSPage() {
   const [catalogView, setCatalogView] = useState<'items' | 'combos'>('items')
   const [modifierItem, setModifierItem] = useState<MenuItemDto | null>(null)
   const [editingLine, setEditingLine] = useState<OrderItem | null>(null)
+  const [cartWidth, setCartWidth] = useState(getInitialCartWidth)
+  const cartWidthRef = useRef(cartWidth)
+
+  useEffect(() => {
+    cartWidthRef.current = cartWidth
+  }, [cartWidth])
+
+  const startCartResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = cartWidthRef.current
+
+    const resize = (moveEvent: PointerEvent) => {
+      const nextWidth = Math.min(MAX_CART_WIDTH, Math.max(MIN_CART_WIDTH, startWidth + startX - moveEvent.clientX))
+      setCartWidth(nextWidth)
+    }
+    const stop = () => {
+      window.removeEventListener('pointermove', resize)
+      window.removeEventListener('pointerup', stop)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.localStorage.setItem(CART_WIDTH_KEY, String(Math.round(cartWidthRef.current)))
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', resize)
+    window.addEventListener('pointerup', stop)
+  }
 
   const { data: taxSettings } = useTaxSettings()
   const { data: restaurant } = useQuery({ queryKey: ['settings', 'restaurant'], queryFn: settingsApi.getRestaurant })
@@ -176,7 +219,7 @@ export default function POSPage() {
   return (
     <div className="flex h-full min-h-0 overflow-hidden bg-background">
       {/* Left - Category Sidebar */}
-      <div className="w-[76px] xl:w-[104px] flex flex-col border-r bg-card shrink-0">
+      <div className="w-[60px] xl:w-[76px] flex flex-col border-r bg-card shrink-0">
         <div className="p-3 border-b flex flex-col items-center gap-1">
           <BrandLogo size="xs" showText={false} />
           <p className="text-[10px] font-bold text-center leading-tight">{BRAND.name}</p>
@@ -215,7 +258,7 @@ export default function POSPage() {
 
       {/* Center - Products */}
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
-        <div className="flex items-center justify-between p-4 border-b bg-card shrink-0 gap-3">
+        <div className="flex items-center justify-between p-3 xl:p-4 border-b bg-card shrink-0 gap-2">
           <div>
             <h1 className="text-xl font-bold">{catalogView === 'combos' ? 'Combos' : 'Products Menu'}</h1>
             <p className="text-xs text-muted-foreground">Select items to add to order</p>
@@ -227,7 +270,7 @@ export default function POSPage() {
           </div>
         </div>
 
-        {orderType === 'dine-in' && <div className={cn('flex items-center justify-between gap-4 border-b px-4 py-3', selectedTableId ? 'bg-success/10' : 'bg-primary/10')}>
+        {orderType === 'dine-in' && <div className={cn('flex items-center justify-between gap-2 border-b px-3 py-2 xl:px-4 xl:py-3', selectedTableId ? 'bg-success/10' : 'bg-primary/10')}>
           <div className="flex min-w-0 items-center gap-3">
             <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', selectedTableId ? 'bg-success text-white' : 'bg-primary text-primary-foreground')}>
               {selectedTableId ? <CheckCircle2 className="h-5 w-5" /> : <Armchair className="h-5 w-5" />}
@@ -238,12 +281,12 @@ export default function POSPage() {
             </div>
           </div>
           <Select value={selectedTableId || ''} onValueChange={(value) => dispatch(setSelectedTable(value))}>
-            <SelectTrigger className={cn('h-11 w-[210px] shrink-0 bg-card font-semibold shadow-sm', !selectedTableId && 'border-primary ring-2 ring-primary/20')}><SelectValue placeholder="Select table" /></SelectTrigger>
+            <SelectTrigger className={cn('h-10 w-[150px] xl:h-11 xl:w-[210px] shrink-0 bg-card font-semibold shadow-sm', !selectedTableId && 'border-primary ring-2 ring-primary/20')}><SelectValue placeholder="Select table" /></SelectTrigger>
             <SelectContent>{tables.filter((table) => table.status === 'available' || table.id === selectedTableId).map((table) => <SelectItem key={table.id} value={table.id}>Table {table.number} · {table.floor} · {table.capacity} seats</SelectItem>)}</SelectContent>
           </Select>
         </div>}
 
-        <div className="p-4 border-b shrink-0">
+        <div className="p-3 xl:p-4 border-b shrink-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
             <Input
@@ -256,7 +299,7 @@ export default function POSPage() {
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto p-2.5 xl:p-4">
-          <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-2.5 xl:gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 xl:gap-3">
             {catalogView === 'items' ? filteredItems.map((item) => (
               <div
                 key={item.id}
@@ -310,7 +353,20 @@ export default function POSPage() {
       </div>
 
       {/* Right - Cart */}
-      <div className="w-[286px] xl:w-[340px] flex flex-col bg-card shrink-0 min-h-0 border-l">
+      <div
+        className="relative flex flex-col bg-card shrink-0 min-h-0 border-l"
+        style={{ width: cartWidth }}
+      >
+        <div
+          role="separator"
+          aria-label="Resize ordered items panel"
+          aria-orientation="vertical"
+          title="Drag to resize order panel"
+          onPointerDown={startCartResize}
+          className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none transition-colors hover:bg-primary/50 active:bg-primary"
+        >
+          <span className="absolute left-1/2 top-1/2 h-12 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-border" />
+        </div>
         <div className="p-4 border-b shrink-0">
           <h2 className="font-semibold">Ordered Items</h2>
         </div>
@@ -390,7 +446,7 @@ export default function POSPage() {
 
         <div className="p-4 border-t shrink-0">
           <Button type="button" size="lg" className="w-full bg-foreground text-background hover:bg-foreground/90"
-            disabled={cart.length === 0}
+            disabled={cart.length === 0 || (orderType === 'dine-in' && !selectedTableId)}
             onClick={() => setCheckoutOpen(true)}>
             Order Now
           </Button>

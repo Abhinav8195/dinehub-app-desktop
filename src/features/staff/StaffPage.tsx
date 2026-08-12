@@ -10,13 +10,44 @@ import { getInitials } from '@/lib/utils'
 import { useQuery } from '@tanstack/react-query'
 import { employeesApi, rolesApi } from '@/api/phase1.api'
 
+type StaffRow = {
+  id: string
+  firstName?: string
+  lastName?: string
+  userType?: string
+  userRoles?: Array<{ role?: { name?: string; rolePermissions?: unknown[] } }>
+}
+
+type RoleRow = {
+  id: string
+  name: string
+  rolePermissions?: unknown[]
+  permissions?: unknown[]
+}
+
+function rowsFrom<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[]
+  if (value && typeof value === 'object') {
+    const nested = (value as { data?: unknown }).data
+    if (Array.isArray(nested)) return nested as T[]
+  }
+  return []
+}
+
 export default function StaffPage() {
-  const { data: employees = [] } = useQuery({ queryKey: ['employees'], queryFn: employeesApi.list })
-  const { data: roles = [] } = useQuery({ queryKey: ['roles'], queryFn: rolesApi.list })
-  const staff = employees as Array<{ id: string; firstName?: string; lastName?: string; userType?: string; userRoles?: Array<{ role?: { name?: string; rolePermissions?: unknown[] } }> }>
-  const roleRows = roles as Array<{ id: string; name: string; rolePermissions?: unknown[]; permissions?: unknown[] }>
+  const employeesQuery = useQuery({ queryKey: ['staff-management', 'employees'], queryFn: employeesApi.list })
+  const rolesQuery = useQuery({ queryKey: ['staff-management', 'roles'], queryFn: rolesApi.list })
+  const staff = rowsFrom<StaffRow>(employeesQuery.data)
+  const roleRows = rowsFrom<RoleRow>(rolesQuery.data)
   return (
-    <PageShell>
+    <PageShell
+      isLoading={employeesQuery.isLoading || rolesQuery.isLoading}
+      isError={employeesQuery.isError || rolesQuery.isError}
+      onRetry={() => {
+        void employeesQuery.refetch()
+        void rolesQuery.refetch()
+      }}
+    >
       <div className="page-container">
         <PageHeader title="Staff Management" description="Roles, permissions, and access control" actions={
           <Button><Plus className="h-4 w-4 mr-2" /> Add Staff</Button>

@@ -11,6 +11,7 @@ import type { PosOrder } from '@/api/types/pos.types'
 import { BRAND } from '@/constants/brand'
 import { BrandLogo } from '@/components/brand/BrandLogo'
 import { cn, formatRelativeTime } from '@/lib/utils'
+import { preparationTransitionStatuses } from './kitchen-utils'
 
 function getOrderLabel(order: PosOrder) {
   if (order.table?.label) return order.table.label
@@ -28,7 +29,7 @@ function formatItems(order: PosOrder) {
   return order.items.map((i) => `${i.name} x${i.quantity}`)
 }
 
-const KITCHEN_STATUSES = ['pending', 'preparing', 'ready']
+const KITCHEN_STATUSES = ['pending', 'confirmed', 'preparing', 'ready']
 
 export default function KitchenPage() {
   const [filter, setFilter] = useState('all')
@@ -36,7 +37,7 @@ export default function KitchenPage() {
 
   const { data: allOrders = [], isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['orders'],
-    queryFn: () => ordersApi.list(),
+    queryFn: () => ordersApi.list().then((result) => result.orders),
     refetchInterval: 15_000,
   })
 
@@ -47,13 +48,23 @@ export default function KitchenPage() {
 
   const filteredOrders = useMemo(() => {
     if (filter === 'all') return kitchenOrders
-    if (filter === 'preparing') return kitchenOrders.filter((o) => o.status === 'preparing' || o.status === 'pending')
+    if (filter === 'preparing') return kitchenOrders.filter((o) => ['pending', 'confirmed', 'preparing'].includes(o.status))
     return kitchenOrders.filter((o) => o.status === filter)
   }, [kitchenOrders, filter])
 
   const statusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
-      ordersApi.updateStatus(id, status),
+    mutationFn: async ({ id, status, currentStatus }: { id: string; status: string; currentStatus?: string }) => {
+      // The API state machine requires confirmation before preparation. Keep
+      // the kitchen's single "Start" action while performing both valid steps.
+      if (currentStatus && status === 'PREPARING') {
+        let updated: PosOrder | undefined
+        for (const nextStatus of preparationTransitionStatuses(currentStatus)) {
+          updated = await ordersApi.updateStatus(id, nextStatus)
+        }
+        return updated as PosOrder
+      }
+      return ordersApi.updateStatus(id, status)
+    },
     onSuccess: (order) => {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       queryClient.invalidateQueries({ queryKey: ['tables'] })
@@ -65,11 +76,11 @@ export default function KitchenPage() {
   const handleReady = (id: string) => statusMutation.mutate({ id, status: 'READY' })
   const handleComplete = (id: string) => statusMutation.mutate({ id, status: 'COMPLETED' })
   const handleReject = (id: string) => statusMutation.mutate({ id, status: 'CANCELLED' })
-  const handleStartPreparing = (id: string) => statusMutation.mutate({ id, status: 'PREPARING' })
+  const handleStartPreparing = (order: PosOrder) => statusMutation.mutate({ id: order.id, status: 'PREPARING', currentStatus: order.status })
 
   const counts = useMemo(() => ({
     all: kitchenOrders.length,
-    preparing: kitchenOrders.filter((o) => o.status === 'preparing' || o.status === 'pending').length,
+    preparing: kitchenOrders.filter((o) => ['pending', 'confirmed', 'preparing'].includes(o.status)).length,
     ready: kitchenOrders.filter((o) => o.status === 'ready').length,
   }), [kitchenOrders])
 
@@ -124,7 +135,7 @@ export default function KitchenPage() {
             const elapsed = getElapsedMinutes(order.createdAt)
             const isHighPriority = elapsed >= 10
             const isReady = order.status === 'ready'
-            const isPending = order.status === 'pending'
+            const isPending = order.status === 'pending' || order.status === 'confirmed'
             const isUpdating = statusMutation.isPending && statusMutation.variables?.id === order.id
 
             return (
@@ -202,7 +213,7 @@ export default function KitchenPage() {
                         type="button"
                         className="bg-warning hover:bg-warning/90 text-black"
                         disabled={isUpdating}
-                        onClick={() => handleStartPreparing(order.id)}
+                        onClick={() => handleStartPreparing(order)}
                       >
                         Start
                       </Button>

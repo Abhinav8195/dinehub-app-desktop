@@ -25,7 +25,7 @@ type LoginForm = z.infer<typeof loginSchema>
 export default function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { login, isLoading, isAuthenticated } = useAuth()
+  const { login, isLoading, isAuthenticated, isInitialized } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
 
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/app'
@@ -39,8 +39,8 @@ export default function LoginPage() {
   })
 
   useEffect(() => {
-    if (isAuthenticated) navigate(from, { replace: true })
-  }, [isAuthenticated, navigate, from])
+    if (isInitialized && isAuthenticated) navigate(from, { replace: true })
+  }, [isInitialized, isAuthenticated, navigate, from])
 
   const onSubmit = async (data: LoginForm) => {
     try {

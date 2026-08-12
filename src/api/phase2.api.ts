@@ -13,7 +13,7 @@ const list = <T = Entity>(url: string, params?: Entity): Promise<T[]> =>
   unwrap(apiClient.get<ApiResponse<T[]>>(url, { params }))
 
 export type SyncMutation = {
-  resource: 'orders' | 'customers'
+  resource: 'orders' | 'customers' | 'inventory'
   operation: 'create' | 'update'
   key: string
   payload: Record<string, unknown>

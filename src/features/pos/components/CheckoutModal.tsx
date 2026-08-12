@@ -12,13 +12,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { formatCurrency } from '@/lib/utils'
 import { calculateTaxBreakdown } from '@/lib/tax'
 import { customersApi } from '@/api/customers.api'
@@ -57,12 +50,12 @@ export function CheckoutModal({
   const [appliedVoucher, setAppliedVoucher] = useState('')
   const [serverTotals, setServerTotals] = useState<OrderTotalsPreview | null>(null)
   const [validatingVoucher, setValidatingVoucher] = useState(false)
-  const [tableId, setTableId] = useState(selectedTableId || '')
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
   const breakdown = serverTotals ?? calculateTaxBreakdown(subtotal, taxSettings)
+  const selectedTable = tables.find((table) => table.id === selectedTableId)
 
   const handleApplyVoucher = async () => {
     const code = voucherCode.trim().toUpperCase()
@@ -108,8 +101,8 @@ export function CheckoutModal({
 
   const handleSubmit = async (paymentMethod: 'CASH' | 'CARD') => {
     if (submittingRef.current) return
-    if (orderType === 'dine-in' && !tableId) {
-      toast.error('Please select a table for dine-in')
+    if (orderType === 'dine-in' && !selectedTableId) {
+      toast.error('Please select a table before checkout')
       return
     }
     const normalizedPhone = phone.replace(/[\s()-]/g, '')
@@ -142,7 +135,7 @@ export function CheckoutModal({
         email: email.trim() || undefined,
         phone: phone.trim() || undefined,
         instructions: instructions.trim() || undefined,
-        tableId: orderType === 'dine-in' ? tableId : undefined,
+        tableId: orderType === 'dine-in' ? selectedTableId || undefined : undefined,
         voucherCode: appliedVoucher || undefined,
         paymentMethod,
       }
@@ -206,17 +199,12 @@ export function CheckoutModal({
             </div>
             {orderType === 'dine-in' && (
               <div className="space-y-2">
-                <Label>Table *</Label>
-                <Select value={tableId} onValueChange={setTableId}>
-                  <SelectTrigger><SelectValue placeholder="Select table" /></SelectTrigger>
-                  <SelectContent>
-                    {tables.filter((t) => t.status === 'available' || t.id === tableId).map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        Table {t.number} — {t.floor} ({t.capacity} seats) {t.status !== 'available' ? `(${t.status})` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Table</Label>
+                <div className="rounded-xl border bg-muted/30 px-3 py-2.5 text-sm font-medium">
+                  {selectedTable
+                    ? `Table ${selectedTable.number} — ${selectedTable.floor} (${selectedTable.capacity} seats)`
+                    : 'Selected table'}
+                </div>
               </div>
             )}
             <div className="space-y-2">

@@ -2,7 +2,7 @@ import {
   LayoutDashboard, ShoppingCart, ClipboardList, Grid3X3, QrCode,
   ChefHat, UtensilsCrossed, Package, ShoppingBag, Users, UserCog,
   CalendarDays, BarChart3, Megaphone, Calculator, Settings, Building2,
-  Bell, LineChart, Shield, Monitor, type LucideIcon
+  Bell, LineChart, Shield, Monitor, Clock3, type LucideIcon
 } from 'lucide-react'
 import type { RestaurantFeature } from '@/types/restaurant-features'
 
@@ -151,6 +151,16 @@ export const NAVIGATION: NavItem[] = [
     icon: UserCog,
     permission: 'employees.view'
     , feature: 'EMPLOYEES'
+  },
+  {
+    id: 'attendance',
+    title: 'Attendance',
+    href: p('/employees/attendance'),
+    icon: Clock3,
+    // Temporary compatibility until ATTENDANCE is present in every backend
+    // plan/permission seed. API actions remain server-authorized.
+    permission: 'employees.view',
+    feature: 'EMPLOYEES'
   },
   {
     id: 'staff',

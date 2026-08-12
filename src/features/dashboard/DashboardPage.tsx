@@ -23,21 +23,33 @@ import { formatCurrency } from '@/lib/utils'
 import { PermissionGuard } from '@/guards/PermissionGuard'
 import { FeatureGate } from '@/guards/FeatureGate'
 import { useFeatureAccess } from '@/hooks/useFeatureAccess'
+import { useAuth } from '@/hooks/useAuth'
+import { useSelector } from 'react-redux'
+import type { RootState } from '@/store'
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } }
 const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }
 
 export default function DashboardPage() {
   const featureAccess = useFeatureAccess()
+  const { user } = useAuth()
+  const selectedRestaurantId = useSelector((state: RootState) => state.app.selectedRestaurantId)
+  const tenantId = user?.isSuperAdmin || user?.userType === 'SUPER_ADMIN'
+    ? selectedRestaurantId
+    : user?.tenantId
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['dashboard', 'stats'],
-    queryFn: () => dashboardApi.getStats(),
+    queryKey: ['dashboard', 'stats', tenantId],
+    queryFn: () => dashboardApi.getStats(tenantId),
     refetchInterval: 30_000,
-    enabled: !featureAccess.isLoading && featureAccess.hasFeature('DASHBOARD'),
+    enabled: Boolean(tenantId) && !featureAccess.isLoading && featureAccess.hasFeature('DASHBOARD'),
   })
 
   const stats = data?.stats
   const tables = data?.tables
+  const activitiesHaveTenantIds = data?.activities.some((activity) => activity.tenantId || activity.restaurantId) ?? false
+  const restaurantActivities = (data?.activities ?? []).filter((activity) =>
+    !activitiesHaveTenantIds || activity.tenantId === tenantId || activity.restaurantId === tenantId
+  )
 
   if (!featureAccess.isLoading && !featureAccess.hasFeature('DASHBOARD')) {
     return (
@@ -221,8 +233,8 @@ export default function DashboardPage() {
                 <Clock className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {(data?.activities ?? []).map((activity, i, arr) => (
+                <div className="h-[260px] space-y-4 overflow-y-auto pr-2">
+                  {restaurantActivities.map((activity, i, arr) => (
                     <div key={activity.id} className="flex gap-3">
                       <div className="flex flex-col items-center">
                         <div className="h-2 w-2 rounded-full bg-primary mt-2" />
@@ -236,7 +248,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   ))}
-                  {!data?.activities?.length && (
+                  {!restaurantActivities.length && (
                     <p className="text-sm text-muted-foreground">No recent activity</p>
                   )}
                 </div>

@@ -7,6 +7,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   tables: 'Table management',
   customers: 'Customer database',
   shifts: 'Staff shifts and PIN login',
+  attendance: 'Employee attendance',
   inventory_basic: 'Inventory',
   dashboard: 'Dashboard',
   notifications: 'Notifications',

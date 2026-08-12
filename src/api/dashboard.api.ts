@@ -25,10 +25,20 @@ export interface DashboardStats {
   }>
   tables: { total: number; occupied: number; available: number; reserved: number }
   kitchenQueue: number
-  activities: Array<{ id: string; action: string; module: string; message: string; createdAt: string }>
+  activities: Array<{
+    id: string
+    action: string
+    module: string
+    message: string
+    createdAt: string
+    tenantId?: string
+    restaurantId?: string
+  }>
 }
 
 export const dashboardApi = {
-  getStats: () =>
-    unwrap(apiClient.get<ApiResponse<DashboardStats>>('/dashboard/stats')),
+  getStats: (tenantId?: string) =>
+    unwrap(apiClient.get<ApiResponse<DashboardStats>>('/dashboard/stats', {
+      params: tenantId ? { tenantId } : undefined,
+    })),
 }

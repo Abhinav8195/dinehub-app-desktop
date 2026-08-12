@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
 import { useShiftStore } from '@/store/shiftStore'
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000
@@ -6,14 +6,23 @@ const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000
 export function useSessionTimeout(timeoutMs = DEFAULT_TIMEOUT_MS) {
   const lockScreen = useShiftStore((s) => s.lockScreen)
   const isLocked = useShiftStore((s) => s.isLocked)
+  const timeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearTimer = useCallback(() => {
+    if (timeoutIdRef.current) {
+      clearTimeout(timeoutIdRef.current)
+      timeoutIdRef.current = null
+    }
+  }, [])
 
   const resetTimer = useCallback(() => {
     if (isLocked) return
-    window.sessionTimeoutId && window.clearTimeout(window.sessionTimeoutId)
-    window.sessionTimeoutId = window.setTimeout(() => {
+    clearTimer()
+    timeoutIdRef.current = setTimeout(() => {
       lockScreen().catch(() => {})
+      timeoutIdRef.current = null
     }, timeoutMs)
-  }, [isLocked, lockScreen, timeoutMs])
+  }, [isLocked, lockScreen, timeoutMs, clearTimer])
 
   useEffect(() => {
     const events = ['mousedown', 'keydown', 'touchstart', 'scroll'] as const
@@ -21,15 +30,9 @@ export function useSessionTimeout(timeoutMs = DEFAULT_TIMEOUT_MS) {
     resetTimer()
     return () => {
       events.forEach((event) => window.removeEventListener(event, resetTimer))
-      if (window.sessionTimeoutId) window.clearTimeout(window.sessionTimeoutId)
+      clearTimer()
     }
-  }, [resetTimer])
+  }, [resetTimer, clearTimer])
 
   return { resetTimer }
-}
-
-declare global {
-  interface Window {
-    sessionTimeoutId?: number
-  }
 }

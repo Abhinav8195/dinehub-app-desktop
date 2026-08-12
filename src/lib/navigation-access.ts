@@ -32,7 +32,10 @@ export function getFirstAccessibleRoute(options: {
   ])
   const dashboard = candidates.find((item) => item.href === APP_BASE)
   if (dashboard && dashboard.href !== options.excludedPath) return dashboard.href
-  return candidates.find((item) => item.href !== options.excludedPath)?.href ?? null
+  const fallback = candidates.find((item) => item.href !== options.excludedPath)?.href
+  if (fallback) return fallback
+  // If the only accessible route is the excluded path, allow it (prevents redirect loop)
+  return candidates.find((item) => item.href === options.excludedPath)?.href ?? null
 }
 
 export function filterNavigation(items: NavItem[], access: NavigationAccess): NavItem[] {

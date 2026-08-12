@@ -80,6 +80,14 @@ export function useNotificationsSync(enabled: boolean) {
       queryClient.invalidateQueries({ queryKey: ['waiter-requests'] })
     }
 
+    const onTableStatusUpdated = () => {
+      queryClient.invalidateQueries({ queryKey: ['tables'] })
+    }
+
+    const onLowStockAlert = () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+    }
+
     socket.on('notification', onNotification)
     socket.on('new_order', onOrder)
     socket.on('qr-order.created', onOrder)
@@ -89,12 +97,8 @@ export function useNotificationsSync(enabled: boolean) {
     socket.on('waiter.acknowledged', onWaiterUpdated)
     socket.on('waiter.completed', onWaiterUpdated)
     socket.on('waiter.cancelled', onWaiterUpdated)
-    socket.on('table_status_updated', () => {
-      queryClient.invalidateQueries({ queryKey: ['tables'] })
-    })
-    socket.on('low_stock_alert', () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] })
-    })
+    socket.on('table_status_updated', onTableStatusUpdated)
+    socket.on('low_stock_alert', onLowStockAlert)
 
     return () => {
       socket.off('notification', onNotification)
@@ -106,8 +110,8 @@ export function useNotificationsSync(enabled: boolean) {
       socket.off('waiter.acknowledged', onWaiterUpdated)
       socket.off('waiter.completed', onWaiterUpdated)
       socket.off('waiter.cancelled', onWaiterUpdated)
-      socket.off('table_status_updated')
-      socket.off('low_stock_alert')
+      socket.off('table_status_updated', onTableStatusUpdated)
+      socket.off('low_stock_alert', onLowStockAlert)
     }
   }, [enabled, dispatch, queryClient])
 }

@@ -39,7 +39,14 @@ const baseUrl = (
   'https://dininghub.in/api/v1'
 ).replace(/\/$/, '')
 const debugApi = import.meta.env.DEV || process.env.DINEHUB_API_DEBUG === '1'
-let refreshPromise: Promise<string> | null = null
+
+interface RefreshState {
+  promise: Promise<string> | null
+  resolve: ((value: string) => void) | null
+  reject: ((reason: unknown) => void) | null
+}
+
+const refreshState: RefreshState = { promise: null, resolve: null, reject: null }
 
 function logRequest(method: string, url: string): void {
   if (debugApi) console.info(`[DineHub API] -> ${method} ${url}`)
@@ -115,33 +122,48 @@ async function parseResponse(response: Response, responseType: DesktopResponseTy
 }
 
 async function refreshAccessToken(): Promise<string> {
-  if (refreshPromise) return refreshPromise
-  refreshPromise = (async () => {
-    const refreshToken = getRefreshToken()
-    if (!refreshToken) throw { statusCode: 401, message: 'Your session has expired. Please sign in again.' } satisfies ApiFailure
-    const response = await fetch(buildUrl('/auth/refresh'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ refreshToken })
-    })
-    const result = await parseResponse(response)
-    const payload = result.data as { data?: { tokens?: { accessToken?: string; refreshToken?: string } } }
-    const tokens = payload.data?.tokens
-    if (!tokens?.accessToken || !tokens.refreshToken) throw { statusCode: 401, message: 'Invalid refresh response' } satisfies ApiFailure
-    setTokens({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken })
-    return tokens.accessToken
-  })()
-  try {
-    return await refreshPromise
-  } catch (error) {
-    const statusCode = (error as Partial<ApiFailure> | null)?.statusCode
-    // A network/gateway failure does not mean the refresh token is invalid.
-    // Keep the persisted session so the app can retry when the API recovers.
-    if (statusCode === 401 || statusCode === 403) clearTokens()
-    throw error
-  } finally {
-    refreshPromise = null
+  if (refreshState.promise) {
+    return refreshState.promise
   }
+
+  return new Promise<string>((resolve, reject) => {
+    refreshState.resolve = resolve
+    refreshState.reject = reject
+
+    const doRefresh = async () => {
+      try {
+        const refreshToken = getRefreshToken()
+        if (!refreshToken) {
+          throw { statusCode: 401, message: 'Your session has expired. Please sign in again.' } satisfies ApiFailure
+        }
+        const response = await fetch(buildUrl('/auth/refresh'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ refreshToken })
+        })
+        const result = await parseResponse(response)
+        const payload = result.data as { data?: { tokens?: { accessToken?: string; refreshToken?: string } } }
+        const tokens = payload.data?.tokens
+        if (!tokens?.accessToken || !tokens.refreshToken) {
+          throw { statusCode: 401, message: 'Invalid refresh response' } satisfies ApiFailure
+        }
+        setTokens({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken })
+        refreshState.resolve?.(tokens.accessToken)
+      } catch (error) {
+        const statusCode = (error as Partial<ApiFailure> | null)?.statusCode
+        if (statusCode === 401 || statusCode === 403) {
+          clearTokens()
+        }
+        refreshState.reject?.(error)
+      } finally {
+        refreshState.promise = null
+        refreshState.resolve = null
+        refreshState.reject = null
+      }
+    }
+
+    refreshState.promise = doRefresh()
+  })
 }
 
 function requestHeaders(request: ApiRequest, accessToken: string | null): Record<string, string> {

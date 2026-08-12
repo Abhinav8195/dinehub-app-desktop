@@ -9,6 +9,7 @@ const stateListeners = new Set<(state: typeof connectionState) => void>()
 const eventListeners = new Map<string, Set<Handler>>()
 let unsubscribeEvent: (() => void) | null = null
 let unsubscribeState: (() => void) | null = null
+let currentConnectionId = 0
 
 const facade: RealtimeFacade = {
   on(event, handler) {
@@ -39,21 +40,66 @@ export function onSocketConnectionState(listener: (state: typeof connectionState
 
 export async function connectSocket(_tenantId?: string): Promise<RealtimeFacade> {
   if (connectionState === 'connected') return facade
+  if (connectionState === 'connecting') {
+    // Wait for existing connection attempt
+    return new Promise((resolve) => {
+      const unsub = onSocketConnectionState((state) => {
+        if (state === 'connected') {
+          unsub()
+          resolve(facade)
+        } else if (state === 'disconnected') {
+          unsub()
+          // Retry connection
+          connectSocket(_tenantId).then(resolve).catch(() => resolve(facade))
+        }
+      })
+    })
+  }
+
+  const thisConnectionId = ++currentConnectionId
   setConnectionState('connecting')
-  unsubscribeEvent ??= window.electronAPI.realtime.onEvent((event, payload) => {
+
+  // Clean up any existing listeners first
+  if (unsubscribeEvent) {
+    unsubscribeEvent()
+    unsubscribeEvent = null
+  }
+  if (unsubscribeState) {
+    unsubscribeState()
+    unsubscribeState = null
+  }
+
+  unsubscribeEvent = window.electronAPI.realtime.onEvent((event, payload) => {
+    if (thisConnectionId !== currentConnectionId) return
     eventListeners.get(event)?.forEach((handler) => handler(payload as never))
   })
-  unsubscribeState ??= window.electronAPI.realtime.onState(setConnectionState)
-  await window.electronAPI.realtime.connect()
+  unsubscribeState = window.electronAPI.realtime.onState((state) => {
+    if (thisConnectionId !== currentConnectionId) return
+    setConnectionState(state)
+  })
+
+  try {
+    await window.electronAPI.realtime.connect()
+  } catch (error) {
+    if (thisConnectionId === currentConnectionId) {
+      setConnectionState('disconnected')
+    }
+    throw error
+  }
   return facade
 }
 
 export function disconnectSocket(): void {
+  currentConnectionId++
   window.electronAPI.realtime.disconnect().catch(() => {})
-  unsubscribeEvent?.()
-  unsubscribeState?.()
-  unsubscribeEvent = null
-  unsubscribeState = null
+  if (unsubscribeEvent) {
+    unsubscribeEvent()
+    unsubscribeEvent = null
+  }
+  if (unsubscribeState) {
+    unsubscribeState()
+    unsubscribeState = null
+  }
   eventListeners.clear()
   setConnectionState('disconnected')
 }

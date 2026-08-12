@@ -46,6 +46,13 @@ export function installDownloadedUpdate(): boolean {
   return true
 }
 
+function clearPeriodicCheck(): void {
+  if (periodicCheck) {
+    clearInterval(periodicCheck)
+    periodicCheck = undefined
+  }
+}
+
 export function initializeAutoUpdater(): void {
   if (initialized || !app.isPackaged) return
   initialized = true
@@ -90,4 +97,7 @@ export function initializeAutoUpdater(): void {
   setTimeout(() => void checkForAppUpdates(), 3000)
   periodicCheck = setInterval(() => void checkForAppUpdates(), 4 * 60 * 60 * 1000)
   periodicCheck.unref()
+
+  // Cleanup on app quit
+  app.on('will-quit', clearPeriodicCheck)
 }

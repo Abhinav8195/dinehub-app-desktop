@@ -1,5 +1,5 @@
 export const FEATURE_KEYS = [
-  'pos', 'orders', 'menu', 'tables', 'customers', 'shifts',
+  'pos', 'orders', 'menu', 'tables', 'customers', 'shifts', 'attendance',
   'inventory_basic', 'dashboard', 'notifications', 'reports_export',
   'kitchen_display', 'reservations', 'qr_ordering', 'multi_branch',
   'purchasing', 'stock_transfer', 'expenses', 'accounting', 'analytics',

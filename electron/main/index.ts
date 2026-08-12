@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, nativeTheme } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, nativeTheme, session } from 'electron'
 import { join } from 'path'
 import { registerIpcHandlers } from './ipc'
 import { setMainWindow, getMainWindow } from './window'
@@ -11,10 +11,38 @@ const appIcon = isDev
 
 app.setName('DineHub')
 
+const CSP_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self' wss: https:",
+  "media-src 'self' blob:",
+  "frame-src 'none'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join('; ')
+
+const CSP_POLICY_DEV = [
+  "default-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self' ws: wss: http: https:",
+  "media-src 'self' blob:",
+  "frame-src 'none'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join('; ')
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    width: 1024,
+    height: 768,
     minWidth: 1024,
     minHeight: 700,
     show: false,
@@ -24,10 +52,18 @@ function createWindow(): void {
     ...(process.platform === 'darwin' ? {} : { icon: appIcon }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
+      sandbox: !isDev,
       contextIsolation: true,
       nodeIntegration: false
     }
+  })
+
+  // Apply CSP (relaxed in dev for Vite HMR)
+  const csp = isDev ? CSP_POLICY_DEV : CSP_POLICY
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    const responseHeaders = details.responseHeaders || {}
+    responseHeaders['Content-Security-Policy'] = [csp]
+    callback({ responseHeaders })
   })
 
   setMainWindow(mainWindow)

@@ -122,9 +122,14 @@ export async function checkOnline(): Promise<boolean> {
     await apiClient.get('/tenants/plans')
     return true
   } catch (error) {
-    // Any HTTP response proves that the API host is reachable. Authentication,
-    // permissions, or a server error must not be reported as a network outage.
-    return error instanceof ApiError && error.statusCode > 0
+    // Only consider it "online" if we got a successful HTTP response (2xx)
+    // or a network-level failure (statusCode === 0 means no response received).
+    // Auth failures (401/403) and server errors (5xx) should not be treated as "online"
+    // for the purpose of the offline banner.
+    if (error instanceof ApiError) {
+      return error.statusCode === 0
+    }
+    return false
   }
 }
 

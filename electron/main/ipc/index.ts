@@ -1,7 +1,6 @@
 import { ipcMain, BrowserWindow, Notification, app, dialog } from 'electron'
 import { readFile, stat, writeFile } from 'fs/promises'
 import { extname, basename } from 'path'
-import Store from 'electron-store'
 import { join } from 'path'
 import { getMainWindow } from '../window'
 import { checkForAppUpdates, getUpdateStatus, installDownloadedUpdate } from '../updater'
@@ -9,7 +8,6 @@ import { registerAuthIpcHandlers } from './auth'
 import { requestDineHubTransport, session, uploadMenuImage, type ApiRequest, type MenuImageUpload } from '../api/dinehubClient'
 import { connectRealtime, disconnectRealtime } from '../realtime'
 
-const store = new Store()
 const isDev = !app.isPackaged
 const appIcon = isDev
   ? join(app.getAppPath(), 'build', 'icon.png')
@@ -103,11 +101,6 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle('realtime:connect', () => connectRealtime())
   ipcMain.handle('realtime:disconnect', () => disconnectRealtime())
-
-  ipcMain.handle('store:get', (_, key: string) => store.get(key))
-  ipcMain.handle('store:set', (_, key: string, value: unknown) => store.set(key, value))
-  ipcMain.handle('store:delete', (_, key: string) => store.delete(key))
-  ipcMain.handle('store:getAll', () => store.store)
 
   ipcMain.handle('window:minimize', () => getMainWindow()?.minimize())
   ipcMain.handle('window:maximize', () => {

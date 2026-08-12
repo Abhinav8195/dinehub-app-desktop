@@ -62,8 +62,8 @@ export function Topbar({ onCloseShift }: TopbarProps) {
 
   return (
     <TooltipProvider>
-      <header className="flex h-16 items-center justify-between border-b bg-background/80 backdrop-blur-md px-6 shrink-0">
-        <div className="flex items-center gap-4">
+      <header className="flex h-16 items-center justify-between gap-2 border-b bg-background/80 backdrop-blur-md px-3 xl:px-6 shrink-0">
+        <div className="hidden min-w-0 items-center gap-4 xl:flex">
           <Breadcrumb />
         </div>
 
@@ -109,7 +109,7 @@ export function Topbar({ onCloseShift }: TopbarProps) {
           {/* Restaurant selector */}
           {isSuperAdmin ? (
             <Select value={selectedRestaurantId} onValueChange={(v) => dispatch(setRestaurant(v))}>
-              <SelectTrigger className="w-[160px] h-9 hidden md:flex">
+              <SelectTrigger className="w-[160px] h-9 hidden xl:flex">
                 <SelectValue placeholder="Restaurant" />
               </SelectTrigger>
               <SelectContent>
@@ -119,7 +119,7 @@ export function Topbar({ onCloseShift }: TopbarProps) {
               </SelectContent>
             </Select>
           ) : (
-            <Badge variant="secondary" className="hidden md:flex h-9 px-3">
+            <Badge variant="secondary" className="hidden xl:flex h-9 px-3">
               {user?.tenant?.name ?? 'Current restaurant'}
             </Badge>
           )}
@@ -129,7 +129,7 @@ export function Topbar({ onCloseShift }: TopbarProps) {
 
           {/* Branch selector */}
           <Select value={selectedBranchId} onValueChange={(v) => dispatch(setBranch(v))}>
-            <SelectTrigger className="w-[140px] h-9 hidden md:flex">
+            <SelectTrigger className="w-[140px] h-9 hidden xl:flex">
               <SelectValue placeholder="Branch" />
             </SelectTrigger>
             <SelectContent>
@@ -231,11 +231,11 @@ export function Topbar({ onCloseShift }: TopbarProps) {
                     {getInitials(`${user?.firstName || ''} ${user?.lastName || ''}` || 'U')}
                   </AvatarFallback>
                 </Avatar>
-                <div className="hidden md:block text-left">
+                <div className="hidden xl:block text-left">
                   <p className="text-sm font-medium leading-none">{user?.firstName} {user?.lastName}</p>
                   <p className="text-[10px] text-muted-foreground capitalize mt-0.5">{user?.roles?.[0] || 'user'}</p>
                 </div>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground hidden md:block" />
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground hidden xl:block" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">

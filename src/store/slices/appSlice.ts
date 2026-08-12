@@ -17,7 +17,7 @@ interface AppState {
 }
 
 const initialState: AppState = {
-  sidebarCollapsed: false,
+  sidebarCollapsed: true,
   darkMode: false,
   selectedRestaurantId: '1',
   selectedBranchId: '1',

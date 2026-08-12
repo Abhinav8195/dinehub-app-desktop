@@ -4,8 +4,23 @@
 
 import { syncApi, type SyncMutation } from '@/api/phase2.api'
 
+// Polyfill for crypto.randomUUID in environments where it's not available
+const generateId = (): string => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  // Fallback for older environments
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
+
 const DB_NAME = 'dinehub-offline'
-const DB_VERSION = 1
+const DB_VERSION = 2
+const MAX_RETRIES = 5
+const BASE_RETRY_DELAY_MS = 1000
 
 export interface SyncQueueItem {
   id: string
@@ -16,6 +31,7 @@ export interface SyncQueueItem {
   operation?: SyncMutation['operation']
   createdAt: string
   retries: number
+  lastAttemptAt?: string
 }
 
 function openDB(): Promise<IDBDatabase> {
@@ -29,7 +45,9 @@ function openDB(): Promise<IDBDatabase> {
         db.createObjectStore('cache', { keyPath: 'key' })
       }
       if (!db.objectStoreNames.contains('syncQueue')) {
-        db.createObjectStore('syncQueue', { keyPath: 'id' })
+        const store = db.createObjectStore('syncQueue', { keyPath: 'id' })
+        store.createIndex('byCreatedAt', 'createdAt')
+        store.createIndex('byRetries', 'retries')
       }
     }
   })
@@ -50,11 +68,11 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
   })
 }
 
-export async function enqueueSync(item: Omit<SyncQueueItem, 'id' | 'createdAt' | 'retries'>): Promise<void> {
+export async function enqueueSync(item: Omit<SyncQueueItem, 'id' | 'createdAt' | 'retries' | 'lastAttemptAt'>): Promise<void> {
   const db = await openDB()
   const entry: SyncQueueItem = {
     ...item,
-    id: crypto.randomUUID(),
+    id: generateId(),
     createdAt: new Date().toISOString(),
     retries: 0,
   }
@@ -88,7 +106,66 @@ function toMutation(item: SyncQueueItem): SyncMutation | null {
       payload: item.body as Record<string, unknown>,
     }
   }
+  if (item.url.startsWith('/orders/') && item.method === 'PATCH' && item.body && typeof item.body === 'object') {
+    return {
+      resource: 'orders',
+      operation: 'update',
+      key: item.id,
+      payload: item.body as Record<string, unknown>,
+    }
+  }
+  if (item.url.startsWith('/customers') && item.method === 'POST' && item.body && typeof item.body === 'object') {
+    return {
+      resource: 'customers',
+      operation: 'create',
+      key: item.id,
+      payload: item.body as Record<string, unknown>,
+    }
+  }
+  if (item.url.startsWith('/customers/') && item.method === 'PATCH' && item.body && typeof item.body === 'object') {
+    return {
+      resource: 'customers',
+      operation: 'update',
+      key: item.id,
+      payload: item.body as Record<string, unknown>,
+    }
+  }
+  if (item.url.startsWith('/inventory/') && item.method === 'POST' && item.body && typeof item.body === 'object') {
+    return {
+      resource: 'inventory',
+      operation: 'create',
+      key: item.id,
+      payload: item.body as Record<string, unknown>,
+    }
+  }
+  if (item.url.startsWith('/inventory/') && item.method === 'PATCH' && item.body && typeof item.body === 'object') {
+    return {
+      resource: 'inventory',
+      operation: 'update',
+      key: item.id,
+      payload: item.body as Record<string, unknown>,
+    }
+  }
   return null
+}
+
+function getRetryDelay(retries: number): number {
+  return BASE_RETRY_DELAY_MS * Math.pow(2, retries) + Math.random() * 1000
+}
+
+async function updateItemRetry(db: IDBDatabase, item: SyncQueueItem): Promise<void> {
+  const tx = db.transaction('syncQueue', 'readwrite')
+  const updatedItem = {
+    ...item,
+    retries: item.retries + 1,
+    lastAttemptAt: new Date().toISOString(),
+  }
+  tx.objectStore('syncQueue').put(updatedItem)
+}
+
+async function deleteItem(db: IDBDatabase, id: string): Promise<void> {
+  const tx = db.transaction('syncQueue', 'readwrite')
+  tx.objectStore('syncQueue').delete(id)
 }
 
 export async function processSyncQueue(
@@ -98,33 +175,73 @@ export async function processSyncQueue(
   const items = await listSyncQueue()
   if (!items.length) return 0
 
+  const now = Date.now()
+  const retryableItems = items.filter((item) => {
+    if (item.retries >= MAX_RETRIES) return false
+    if (!item.lastAttemptAt) return true
+    const lastAttempt = new Date(item.lastAttemptAt).getTime()
+    return now - lastAttempt >= getRetryDelay(item.retries)
+  })
+
+  if (!retryableItems.length) return 0
+
   if (executor) {
     let processed = 0
-    for (const item of items) {
+    for (const item of retryableItems) {
       try {
         await executor(item)
-        const tx = db.transaction('syncQueue', 'readwrite')
-        tx.objectStore('syncQueue').delete(item.id)
+        await deleteItem(db, item.id)
         processed++
       } catch {
-        // keep in queue for next sync attempt
+        await updateItemRetry(db, item)
       }
     }
     return processed
   }
 
-  const mutations = items.map(toMutation).filter((entry): entry is SyncMutation => Boolean(entry))
-  if (!mutations.length) return 0
+  let processed = 0
+  for (const item of retryableItems) {
+    const mutation = toMutation(item)
+    if (!mutation) {
+      await deleteItem(db, item.id)
+      continue
+    }
 
-  await syncApi.push(mutations)
-  const tx = db.transaction('syncQueue', 'readwrite')
-  for (const item of items) {
-    if (toMutation(item)) tx.objectStore('syncQueue').delete(item.id)
+    try {
+      await syncApi.push([mutation])
+      await deleteItem(db, item.id)
+      processed++
+    } catch {
+      await updateItemRetry(db, item)
+    }
   }
-  return mutations.length
+  return processed
 }
 
 export async function flushOfflineQueue(): Promise<number> {
   if (!navigator.onLine) return 0
   return processSyncQueue()
+}
+
+export async function getSyncQueueStatus(): Promise<{ pending: number; failed: number; oldestItem?: string }> {
+  const items = await listSyncQueue()
+  const pending = items.filter((i) => i.retries < MAX_RETRIES).length
+  const failed = items.filter((i) => i.retries >= MAX_RETRIES).length
+  const oldestItem = items.length > 0
+    ? items.reduce((oldest, item) => item.createdAt < oldest.createdAt ? item : oldest).createdAt
+    : undefined
+  return { pending, failed, oldestItem }
+}
+
+export async function clearFailedSyncItems(): Promise<number> {
+  const db = await openDB()
+  const items = await listSyncQueue()
+  let cleared = 0
+  for (const item of items) {
+    if (item.retries >= MAX_RETRIES) {
+      await deleteItem(db, item.id)
+      cleared++
+    }
+  }
+  return cleared
 }
