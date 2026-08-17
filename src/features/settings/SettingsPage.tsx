@@ -49,8 +49,22 @@ export default function SettingsPage() {
   }, [taxSettings])
   useEffect(() => {
     if (!restaurant) return
-    const value = restaurant as Record<string, unknown>
-    setRestaurantForm((current) => ({ ...current, ...Object.fromEntries(Object.keys(current).map((key) => [key, value[key] ?? current[key]])) }) as typeof current)
+    setRestaurantForm({
+      name: String(restaurant.name ?? ''),
+      legalName: String(restaurant.legalName ?? ''),
+      address: String(restaurant.address ?? ''),
+      phone: String(restaurant.phone ?? ''),
+      gstin: String(restaurant.gstin ?? ''),
+      fssaiNumber: String(restaurant.fssaiNumber ?? ''),
+      defaultLanguage: String(restaurant.defaultLanguage ?? 'en'),
+      razorpayEnabled: Boolean(restaurant.razorpayEnabled),
+      stripeEnabled: Boolean(restaurant.stripeEnabled),
+      squareEnabled: Boolean(restaurant.squareEnabled),
+      paypalEnabled: Boolean(restaurant.paypalEnabled),
+      razorpayKeyId: String(restaurant.razorpayKeyId ?? ''),
+      stripePublishableKey: String(restaurant.stripePublishableKey ?? ''),
+      kotEnabled: restaurant.kotEnabled !== false,
+    })
   }, [restaurant])
   useEffect(() => {
     window.electronAPI.updates.getStatus().then(setUpdateStatus).catch(() => {})

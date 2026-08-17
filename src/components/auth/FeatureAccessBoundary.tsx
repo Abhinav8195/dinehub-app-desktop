@@ -1,7 +1,9 @@
-import { AlertTriangle, RefreshCw } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { AlertTriangle, LogOut, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SplashScreen } from '@/components/brand/SplashScreen'
+import { useAuth } from '@/hooks/useAuth'
 import { useFeatureAccess } from '@/hooks/useFeatureAccess'
 import { usePermissions } from '@/hooks/usePermissions'
 import { RESTAURANT_FEATURES } from '@/types/restaurant-features'
@@ -10,9 +12,19 @@ function CenteredCard({ children }: { children: React.ReactNode }) {
   return <div className="flex min-h-screen items-center justify-center bg-background p-6">{children}</div>
 }
 
+function useSignOut() {
+  const navigate = useNavigate()
+  const { logout } = useAuth()
+  return async () => {
+    await logout()
+    navigate('/login', { replace: true })
+  }
+}
+
 export function FeatureAccessBoundary({ children }: { children: React.ReactNode }) {
   const { isLoading, isError, error, refetch, hasAnyFeature } = useFeatureAccess()
   const { isSuperAdmin } = usePermissions()
+  const signOut = useSignOut()
 
   if (isLoading) return <SplashScreen />
 
@@ -25,7 +37,10 @@ export function FeatureAccessBoundary({ children }: { children: React.ReactNode 
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">{error || 'Unable to load restaurant features.'}</p>
-            <Button onClick={() => void refetch()}><RefreshCw className="mr-2 h-4 w-4" /> Retry</Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => void refetch()}><RefreshCw className="mr-2 h-4 w-4" /> Retry</Button>
+              <Button variant="outline" onClick={() => void signOut()}><LogOut className="mr-2 h-4 w-4" /> Logout</Button>
+            </div>
           </CardContent>
         </Card>
       </CenteredCard>
@@ -40,12 +55,16 @@ export function FeatureAccessBoundary({ children }: { children: React.ReactNode 
 }
 
 export function NoFeaturesEnabled() {
+  const signOut = useSignOut()
   return (
     <CenteredCard>
       <Card className="w-full max-w-md">
         <CardHeader><CardTitle>No features enabled</CardTitle></CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Contact your DineHub administrator to enable features for this restaurant.
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Contact your DineHub administrator to enable features for this restaurant.
+          </p>
+          <Button variant="outline" onClick={() => void signOut()}><LogOut className="mr-2 h-4 w-4" /> Logout</Button>
         </CardContent>
       </Card>
     </CenteredCard>

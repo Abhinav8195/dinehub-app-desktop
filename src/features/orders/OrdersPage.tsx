@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSelector } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Eye, RefreshCw, Search, ShoppingBag, CircleDollarSign, Clock3, CheckCircle2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Eye, Printer, RefreshCw, Search, ShoppingBag, CircleDollarSign, Clock3, CheckCircle2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/common/PageHeader'
 import { PageShell } from '@/components/common/PageShell'
@@ -16,8 +16,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ordersApi } from '@/api/orders.api'
 import { branchesApi } from '@/api/phase1.api'
+import { settingsApi } from '@/api/settings.api'
 import type { PosOrder } from '@/api/types/pos.types'
 import type { RootState } from '@/store'
+import { buildReceiptHtml } from '@/lib/print/receipt'
 import { formatCurrency, formatDateTime, formatRelativeTime } from '@/lib/utils'
 import { OrderDetailDialog } from './components/OrderDetailDialog'
 import { OrderStatusBadge } from './components/OrderStatusBadge'
@@ -30,6 +32,44 @@ function useDebouncedValue<T>(value: T, delay = 350) {
   const [debounced, setDebounced] = useState(value)
   useEffect(() => { const timer = window.setTimeout(() => setDebounced(value), delay); return () => window.clearTimeout(timer) }, [value, delay])
   return debounced
+}
+
+async function printOrderReceipt(order: PosOrder) {
+  const restaurant = await settingsApi.getRestaurant().catch(() => ({} as Awaited<ReturnType<typeof settingsApi.getRestaurant>>))
+  const html = buildReceiptHtml({
+    orderNumber: order.orderNumber,
+    restaurant: {
+      name: restaurant.name,
+      logoUrl: typeof restaurant.logoUrl === 'string' ? restaurant.logoUrl : undefined,
+      showLogo: restaurant.receiptLogoEnabled !== false,
+      address: restaurant.address,
+      phone: restaurant.phone,
+      gstin: restaurant.gstin,
+    },
+    customerName: order.customer?.name,
+    table: order.table?.label,
+    orderType: labelize(order.type),
+    items: order.items.map((item) => ({
+      name: `${item.name}${item.variantName ? ` (${item.variantName})` : ''}`,
+      qty: item.quantity,
+      price: item.price,
+      amount: item.total,
+    })),
+    subtotal: order.subtotal,
+    taxes: [
+      { name: 'GST', amount: order.gstAmount },
+      { name: 'SGST', amount: order.sgstAmount },
+      { name: 'CGST', amount: order.cgstAmount },
+    ].filter((tax) => tax.amount > 0),
+    discount: Number(order.discount || 0) + Number(order.voucherDiscount || 0) || undefined,
+    additionalCharges: order.serviceCharge > 0 ? [{ name: 'Service charge', amount: order.serviceCharge }] : undefined,
+    total: order.total,
+    paymentMethod: order.paymentMethod ? labelize(order.paymentMethod) : undefined,
+    footerText: typeof restaurant.receiptFooter === 'string' ? restaurant.receiptFooter : undefined,
+    date: order.createdAt,
+  })
+  if (!window.electronAPI?.printReceipt) throw new Error('Printing is unavailable in this environment')
+  await window.electronAPI.printReceipt(html)
 }
 
 export default function OrdersPage() {
@@ -51,6 +91,7 @@ export default function OrdersPage() {
   const [page, setPage] = useState(1)
   const [selectedOrder, setSelectedOrder] = useState<PosOrder | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [printingId, setPrintingId] = useState<string | null>(null)
   const range = useMemo(() => getDateRange(datePreset, new Date(), fromDate, toDate), [datePreset, fromDate, toDate])
 
   useEffect(() => setPage(1), [debouncedSearch, datePreset, fromDate, toDate, status, paymentStatus, paymentMethod, orderType, branchId, sortBy, sortOrder])
@@ -109,6 +150,48 @@ export default function OrdersPage() {
     onError: (error: Error) => toast.error(error.message || 'Unable to update the order'),
   })
 
+  const deleteOrder = useMutation({
+    mutationFn: (id: string) => ordersApi.delete(id),
+    onSuccess: (_data, id) => {
+      if (selectedOrder?.id === id) {
+        setDetailOpen(false)
+        setSelectedOrder(null)
+      }
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      queryClient.invalidateQueries({ queryKey: ['tables'] })
+      toast.success('Order deleted')
+    },
+    onError: (error: Error) => toast.error(error.message || 'Unable to delete the order'),
+  })
+
+  const handlePrint = async (order: PosOrder) => {
+    setPrintingId(order.id)
+    try {
+      await printOrderReceipt(order)
+      toast.success(`Receipt for ${order.orderNumber} sent to printer`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to print receipt')
+    } finally {
+      setPrintingId(null)
+    }
+  }
+
+  const handleDelete = (order: PosOrder) => {
+    if (!window.confirm(`Delete order ${order.orderNumber}? This cannot be undone.`)) return
+    deleteOrder.mutate(order.id)
+  }
+
+  const openOrderDetails = async (order: PosOrder) => {
+    setSelectedOrder(order)
+    setDetailOpen(true)
+    try {
+      const full = await ordersApi.get(order.id)
+      setSelectedOrder(full)
+    } catch {
+      // Keep list row data if detail fetch fails
+    }
+  }
+
   const toggleSort = (key: string) => {
     if (sortBy === key) setSortOrder((value) => value === 'asc' ? 'desc' : 'asc')
     else { setSortBy(key); setSortOrder('asc') }
@@ -157,19 +240,65 @@ export default function OrdersPage() {
             <TableHeader><TableRow>
               <SortableHead label="Order" column="orderNumber" onSort={toggleSort}><SortIcon column="orderNumber" /></SortableHead>
               <SortableHead label="Date & time" column="createdAt" onSort={toggleSort}><SortIcon column="createdAt" /></SortableHead>
-              <SortableHead label="Customer & items" column="customer" onSort={toggleSort}><SortIcon column="customer" /></SortableHead>
-              <TableHead>Fulfillment</TableHead><SortableHead label="Total" column="total" onSort={toggleSort}><SortIcon column="total" /></SortableHead><TableHead>Payment</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead>
+              <SortableHead label="Customer" column="customer" onSort={toggleSort}><SortIcon column="customer" /></SortableHead>
+              <TableHead>Order items</TableHead>
+              <TableHead>Fulfillment</TableHead>
+              <SortableHead label="Total" column="total" onSort={toggleSort}><SortIcon column="total" /></SortableHead>
+              <TableHead>Payment</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow></TableHeader>
-            <TableBody>{visibleOrders.map((order) => <TableRow key={order.id} tabIndex={0} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" onDoubleClick={() => { setSelectedOrder(order); setDetailOpen(true) }}>
-              <TableCell className="font-semibold">{order.orderNumber}</TableCell>
+            <TableBody>{visibleOrders.map((order) => {
+              const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0)
+              return (
+              <TableRow key={order.id} tabIndex={0} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" onDoubleClick={() => openOrderDetails(order)}>
+              <TableCell className="font-semibold whitespace-nowrap">
+                <p>{order.orderNumber}</p>
+                {order.instructions && <p className="mt-0.5 max-w-[140px] truncate text-xs text-muted-foreground" title={order.instructions}>Note: {order.instructions}</p>}
+              </TableCell>
               <TableCell className="whitespace-nowrap"><p>{formatDateTime(order.createdAt)}</p><p className="text-xs text-muted-foreground">{formatRelativeTime(order.createdAt)}</p></TableCell>
-              <TableCell className="min-w-[260px]"><p className="font-medium">{order.customer?.name || 'Walk-in customer'}</p><p className="max-w-[360px] truncate text-xs text-muted-foreground" title={orderItemSummary(order, 99)}>{orderItemSummary(order)}</p></TableCell>
-              <TableCell><p>{labelize(order.type)}</p>{normalize(order.type) === 'dine-in' && <p className="text-xs text-muted-foreground">{order.table?.label || 'Table not assigned'}</p>}</TableCell>
-              <TableCell className="font-semibold">{formatCurrency(order.total)}</TableCell>
+              <TableCell className="min-w-[180px]">
+                <p className="font-medium">{order.customer?.name || 'Walk-in customer'}</p>
+                {order.customer?.phone && <p className="text-xs text-muted-foreground">{order.customer.phone}</p>}
+                {order.customer?.email && <p className="max-w-[200px] truncate text-xs text-muted-foreground" title={order.customer.email}>{order.customer.email}</p>}
+                {!order.customer?.phone && !order.customer?.email && <p className="text-xs text-muted-foreground">No contact details</p>}
+              </TableCell>
+              <TableCell className="min-w-[220px]">
+                <p className="text-sm font-medium">{itemCount} item{itemCount === 1 ? '' : 's'}</p>
+                <p className="max-w-[280px] text-xs text-muted-foreground" title={orderItemSummary(order, 99)}>{orderItemSummary(order, 3)}</p>
+              </TableCell>
+              <TableCell>
+                <p>{labelize(order.type)}</p>
+                {normalize(order.type) === 'dine-in' && <p className="text-xs text-muted-foreground">{order.table?.label || 'Table not assigned'}</p>}
+                {normalize(order.type) === 'delivery' && order.deliveryAddress && <p className="max-w-[160px] truncate text-xs text-muted-foreground" title={order.deliveryAddress}>{order.deliveryAddress}</p>}
+                {order.branch?.name && <p className="text-xs text-muted-foreground">{order.branch.name}</p>}
+              </TableCell>
+              <TableCell className="font-semibold whitespace-nowrap">{formatCurrency(order.total)}</TableCell>
               <TableCell><OrderStatusBadge status={order.paymentStatus || (order.paymentMethod ? 'paid' : 'pending')} kind="payment" /><p className="mt-1 text-xs text-muted-foreground">{labelize(order.paymentMethod)}</p></TableCell>
               <TableCell><OrderStatusBadge status={order.status} /></TableCell>
-              <TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => { setSelectedOrder(order); setDetailOpen(true) }} aria-label={`View order ${order.orderNumber}`}><Eye className="mr-2 h-4 w-4" /> View</Button></TableCell>
-            </TableRow>)}</TableBody>
+              <TableCell className="text-right">
+                <div className="inline-flex flex-wrap items-center justify-end gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => openOrderDetails(order)} aria-label={`View order ${order.orderNumber}`}>
+                    <Eye className="mr-1.5 h-4 w-4" /> View
+                  </Button>
+                  <Button variant="ghost" size="sm" disabled={printingId === order.id} onClick={() => handlePrint(order)} aria-label={`Print order ${order.orderNumber}`}>
+                    <Printer className="mr-1.5 h-4 w-4" /> {printingId === order.id ? 'Printing…' : 'Print'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-danger hover:text-danger"
+                    disabled={deleteOrder.isPending && deleteOrder.variables === order.id}
+                    onClick={() => handleDelete(order)}
+                    aria-label={`Delete order ${order.orderNumber}`}
+                  >
+                    <Trash2 className="mr-1.5 h-4 w-4" /> Delete
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+              )
+            })}</TableBody>
           </Table></div></div>
           <div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total} orders</p><div className="flex items-center gap-2"><Button variant="outline" size="sm" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page <= 1} aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></Button><span className="text-sm">Page {page} of {totalPages}</span><Button variant="outline" size="sm" onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={page >= totalPages} aria-label="Next page"><ChevronRight className="h-4 w-4" /></Button></div></div>
         </>}

@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApiError } from '@/api/types/common'
-import { resolveMenuImageUrl } from '@/api/menu.api'
+import { resolveMenuImageUrl, menuItemService } from '@/api/menu.api'
 import type { Category, MenuItem } from '@/api/types/menu.types'
 import { formatCurrency } from '@/lib/utils'
 import { useMenuManagement } from './useMenuManagement'
@@ -125,6 +125,16 @@ export default function MenuPage() {
     const errors = itemForm.hasVariants ? validateVariants(itemForm.variants) : {}
     setVariantErrors(errors)
     if (Object.keys(errors).length) return toast.error('Review the highlighted variant fields')
+    const variantPayload = itemForm.hasVariants ? itemForm.variants.map((variant, sortOrder) => ({
+      ...(variant.id ? { id: variant.id } : {}),
+      name: variant.name.trim(),
+      price: Number(variant.price),
+      discountedPrice: variant.discountedPrice === '' ? null : Number(variant.discountedPrice),
+      isAvailable: variant.isAvailable,
+      isDefault: variant.isDefault,
+      sortOrder,
+    })) : undefined
+    // Update DTO forbids nested `variants` — only create accepts them inline.
     const body = {
       categoryId: itemForm.categoryId,
       name: itemForm.name.trim(),
@@ -134,15 +144,18 @@ export default function MenuPage() {
       isAvailable: itemForm.isAvailable,
       isPopular: itemForm.isPopular,
       hasVariants: itemForm.hasVariants,
-      variants: itemForm.hasVariants ? itemForm.variants.map((variant, sortOrder) => ({
-        ...(variant.id ? { id: variant.id } : {}), name: variant.name.trim(), price: Number(variant.price),
-        discountedPrice: variant.discountedPrice === '' ? null : Number(variant.discountedPrice),
-        isAvailable: variant.isAvailable, isDefault: variant.isDefault, sortOrder
-      })) : []
+      ...(editingItem || !itemForm.hasVariants ? {} : { variants: variantPayload }),
     }
     try {
-      if (editingItem) await menu.updateItem.mutateAsync({ id: editingItem.id, body })
-      else await menu.createItem.mutateAsync(body)
+      if (editingItem) {
+        await menu.updateItem.mutateAsync({ id: editingItem.id, body })
+        if (itemForm.hasVariants && variantPayload) {
+          await menuItemService.syncVariants(editingItem.id, editingItem.variants ?? [], variantPayload)
+          await menu.refresh()
+        }
+      } else {
+        await menu.createItem.mutateAsync(body)
+      }
       setItemDialog(false)
       toast.success(editingItem ? 'Menu item updated' : 'Menu item created')
     } catch (error) {

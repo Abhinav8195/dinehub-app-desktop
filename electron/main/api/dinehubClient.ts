@@ -211,7 +211,7 @@ async function sendOnce(request: ApiRequest, accessToken: string): Promise<Deskt
 }
 
 async function sendImageUpload(
-  path: '/files/upload',
+  path: string,
   file: MenuImageUpload,
   accessToken: string | null,
   onProgress: (progress: number) => void
@@ -234,7 +234,7 @@ async function sendImageUpload(
 }
 
 async function sendImageUploadOnce(
-  path: '/files/upload',
+  path: string,
   file: MenuImageUpload,
   accessToken: string,
   onProgress: (progress: number) => void
@@ -267,6 +267,12 @@ export async function requestDineHubTransport(request: ApiRequest): Promise<Desk
   return result
 }
 
+const MENU_IMAGE_UPLOAD_PATH: Record<'category' | 'item' | 'combo', '/menu/categories/upload-image' | '/menu/items/upload-image' | '/combos/upload-image'> = {
+  category: '/menu/categories/upload-image',
+  item: '/menu/items/upload-image',
+  combo: '/combos/upload-image',
+}
+
 export async function uploadMenuImage(
   kind: 'category' | 'item' | 'combo',
   file: MenuImageUpload,
@@ -279,7 +285,8 @@ export async function uploadMenuImage(
   if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.mimeType)) {
     throw { statusCode: 400, message: 'Select a JPEG, PNG, WebP, or GIF image' } satisfies ApiFailure
   }
-  const payload = await sendImageUpload('/files/upload', file, getAccessToken(), onProgress)
+  const path = MENU_IMAGE_UPLOAD_PATH[kind]
+  const payload = await sendImageUpload(path, file, getAccessToken(), onProgress)
   const response = payload as {
     data?: { imageUrl?: unknown; url?: unknown; fileUrl?: unknown; path?: unknown }
   }

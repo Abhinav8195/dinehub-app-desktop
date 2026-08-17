@@ -2,7 +2,7 @@ import apiClient, { unwrap } from './client'
 import type { ApiResponse } from './types/common'
 import type {
   BulkAvailabilityBody, Category, CreateCategoryBody, CreateMenuItemBody,
-  MenuItem, UpdateCategoryBody, UpdateMenuItemBody
+  MenuItem, MenuItemVariant, MenuItemVariantInput, UpdateCategoryBody, UpdateMenuItemBody
 } from './types/menu.types'
 
 const apiBaseUrl = import.meta.env.VITE_API_URL || 'https://dininghub.in/api/v1'
@@ -29,6 +29,17 @@ const mapMenuItem = (item: MenuItem): MenuItem => ({
   } : {})
 })
 
+/** Update DTO rejects nested `variants` — manage them via dedicated endpoints. */
+function itemWriteBody(body: CreateMenuItemBody | UpdateMenuItemBody, { allowVariants }: { allowVariants: boolean }) {
+  const { variants, ...rest } = body
+  return {
+    ...rest,
+    isAvailable: body.isAvailable,
+    isPopular: body.isPopular,
+    ...(allowVariants && body.hasVariants && variants?.length ? { variants } : {}),
+  }
+}
+
 export const categoryService = {
   list: async (all = false) => (await unwrap(apiClient.get<ApiResponse<Category[]>>('/menu/categories', {
     params: all ? { all: true } : undefined
@@ -52,23 +63,39 @@ export const menuItemService = {
     await unwrap(apiClient.get<ApiResponse<MenuItem>>(`/menu/items/${id}`))
   ),
   create: async (body: CreateMenuItemBody) => mapMenuItem(
-    await unwrap(apiClient.post<ApiResponse<MenuItem>>('/menu/items', {
-      ...body,
-      // The write model intentionally uses isAvailable/isPopular.
-      isAvailable: body.isAvailable,
-      isPopular: body.isPopular
-    }))
+    await unwrap(apiClient.post<ApiResponse<MenuItem>>('/menu/items', itemWriteBody(body, { allowVariants: true })))
   ),
   update: async (id: string, body: UpdateMenuItemBody) => mapMenuItem(
-    await unwrap(apiClient.put<ApiResponse<MenuItem>>(`/menu/items/${id}`, {
-      ...body,
-      isAvailable: body.isAvailable,
-      isPopular: body.isPopular
-    }))
+    await unwrap(apiClient.put<ApiResponse<MenuItem>>(`/menu/items/${id}`, itemWriteBody(body, { allowVariants: false })))
   ),
   delete: (id: string) => unwrap(apiClient.delete<ApiResponse<null>>(`/menu/items/${id}`)),
   bulkToggle: (body: BulkAvailabilityBody) =>
-    unwrap(apiClient.patch<ApiResponse<null>>('/menu/items/bulk-toggle', body))
+    unwrap(apiClient.patch<ApiResponse<null>>('/menu/items/bulk-toggle', body)),
+  createVariant: (itemId: string, body: MenuItemVariantInput) =>
+    unwrap(apiClient.post<ApiResponse<MenuItemVariant>>(`/menu/items/${itemId}/variants`, body)),
+  updateVariant: (itemId: string, variantId: string, body: Partial<MenuItemVariantInput>) =>
+    unwrap(apiClient.patch<ApiResponse<MenuItemVariant>>(`/menu/items/${itemId}/variants/${variantId}`, body)),
+  deleteVariant: (itemId: string, variantId: string) =>
+    unwrap(apiClient.delete<ApiResponse<null>>(`/menu/items/${itemId}/variants/${variantId}`)),
+  /** Sync draft variants after a menu-item update (create / patch / delete). */
+  syncVariants: async (itemId: string, existing: MenuItemVariant[] = [], drafts: MenuItemVariantInput[]) => {
+    const kept = new Set(drafts.map((v) => v.id).filter(Boolean) as string[])
+    for (const variant of existing) {
+      if (!kept.has(variant.id)) await menuItemService.deleteVariant(itemId, variant.id)
+    }
+    for (const draft of drafts) {
+      const body = {
+        name: draft.name,
+        price: draft.price,
+        discountedPrice: draft.discountedPrice ?? null,
+        isAvailable: draft.isAvailable,
+        isDefault: draft.isDefault,
+        sortOrder: draft.sortOrder,
+      }
+      if (draft.id) await menuItemService.updateVariant(itemId, draft.id, body)
+      else await menuItemService.createVariant(itemId, body)
+    }
+  },
 }
 
 // Compatibility facade for existing call sites.

@@ -76,6 +76,80 @@ function download(filename: string, content: BlobPart, type = 'application/octet
   return { saved: true, path: filename }
 }
 
+const MENU_UPLOAD: Record<string, string> = {
+  category: '/menu/categories/upload-image',
+  item: '/menu/items/upload-image',
+  combo: '/combos/upload-image',
+}
+
+function pickImageFile(kind: 'category' | 'item' | 'combo'): Promise<{
+  name: string
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
+  size: number
+  base64: string
+  previewUrl: string
+} | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/jpeg,image/png,image/webp,image/gif'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return resolve(null)
+      const maxMb = kind === 'combo' ? 5 : 1
+      if (file.size > maxMb * 1024 * 1024) {
+        resolve(null)
+        return
+      }
+      const buffer = await file.arrayBuffer()
+      const bytes = new Uint8Array(buffer)
+      let binary = ''
+      bytes.forEach((b) => { binary += String.fromCharCode(b) })
+      const base64 = btoa(binary)
+      const mimeType = file.type as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
+      resolve({
+        name: file.name,
+        mimeType,
+        size: file.size,
+        base64,
+        previewUrl: `data:${mimeType};base64,${base64}`,
+      })
+    }
+    input.click()
+  })
+}
+
+async function uploadMenuImageWeb(
+  kind: 'category' | 'item' | 'combo',
+  file: { name: string; mimeType: string; size: number; base64: string },
+  onProgress: (progress: number) => void
+) {
+  const bytes = Uint8Array.from(atob(file.base64), (c) => c.charCodeAt(0))
+  const form = new FormData()
+  form.append('file', new Blob([bytes], { type: file.mimeType }), file.name)
+  onProgress(20)
+  const accessToken = sessionStorage.getItem(ACCESS)
+  const response = await fetch(`${API_BASE}${MENU_UPLOAD[kind]}`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: form,
+  })
+  onProgress(80)
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) {
+    return { ok: false, error: { message: payload?.message || 'Image upload failed', statusCode: response.status } }
+  }
+  const imageUrl = payload?.data?.imageUrl || payload?.data?.url || payload?.data?.fileUrl
+  if (!imageUrl) {
+    return { ok: false, error: { message: 'Upload response did not contain an image URL', statusCode: 502 } }
+  }
+  onProgress(100)
+  return { ok: true, payload: { data: { ...payload?.data, imageUrl } } }
+}
+
 export function installBrowserBridge() {
   if (window.electronAPI) return
   const noopUnsubscribe = () => () => {}
@@ -83,8 +157,8 @@ export function installBrowserBridge() {
     requestDineHub,
     hasSession: async () => Boolean(sessionStorage.getItem(ACCESS) && sessionStorage.getItem(REFRESH)),
     clearTokens: async () => { sessionStorage.removeItem(ACCESS); sessionStorage.removeItem(REFRESH) },
-    getTenantSlug: async () => null,
-    setTenantSlug: async () => undefined,
+    getTenantSlug: async () => sessionStorage.getItem('dinehub.web.tenant') || null,
+    setTenantSlug: async (slug: string) => { sessionStorage.setItem('dinehub.web.tenant', slug) },
     getDeviceId: async () => deviceId(),
     getAppVersion: async () => 'web',
     openExternal: async (url: string) => { window.open(url, '_blank', 'noopener,noreferrer') },
@@ -94,7 +168,11 @@ export function installBrowserBridge() {
     updates: { getStatus: async () => ({ state: 'idle' }), check: async () => ({ state: 'idle' }), install: async () => false, onStatus: noopUnsubscribe },
     realtime: { connect: async () => undefined, disconnect: async () => undefined, onState: noopUnsubscribe, onEvent: noopUnsubscribe },
     notify: { show: async (title: string, body: string) => { if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body }) } },
-    menuImages: { select: async () => null, upload: async () => { throw new Error('Use an image URL in the web app') } },
+    menuImages: {
+      select: (kind: 'category' | 'item' | 'combo' = 'item') => pickImageFile(kind),
+      upload: (kind: 'category' | 'item' | 'combo', file: any, onProgress: (n: number) => void) =>
+        uploadMenuImageWeb(kind, file, onProgress),
+    },
     window: { minimize: async () => undefined, maximize: async () => undefined, close: async () => undefined, openPOS: async () => undefined, openKDS: async () => undefined },
     print: { receipt: async () => undefined, kitchen: async () => undefined, getPrinters: async () => [] },
     theme: { get: async () => false, set: async () => undefined },

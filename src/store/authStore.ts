@@ -6,6 +6,7 @@ import { ApiError } from '@/api/types/common'
 import { matchPermission } from '@/lib/permissions'
 import { tenantsApi } from '@/api/tenants.api'
 import {
+  defaultRestaurantFeatureMap,
   featureEnabled,
   toRestaurantFeatureMap,
   type RestaurantFeature,
@@ -70,6 +71,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return
     }
 
+    // Login already returns featureFlags — use them and skip the SaaS-only tenants API.
+    if (user.featureFlags?.length) {
+      set({
+        features: toRestaurantFeatureMap(user.featureFlags),
+        featuresStatus: 'ready',
+        featuresError: null,
+      })
+      return
+    }
+
     if (get().featuresStatus !== 'ready') {
       set({ featuresStatus: 'loading', featuresError: null })
     }
@@ -77,6 +88,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const flags = await tenantsApi.getFeatureFlags(user.tenantId)
       set({ features: toRestaurantFeatureMap(flags), featuresStatus: 'ready', featuresError: null })
     } catch (error) {
+      // /tenants/:id/feature-flags often 404s for restaurant users (needs tenants.read).
+      // Keep an already-loaded map, otherwise unlock core restaurant modules.
+      if (get().featuresStatus === 'ready' && Object.keys(get().features).length) return
+      const isRestaurantStaff = Boolean(
+        user.tenantId &&
+        (user.roles?.some((role) =>
+          ['owner', 'admin', 'manager', 'cashier', 'waiter', 'chef', 'kitchen'].includes(role.toLowerCase())
+        ) || user.userType)
+      )
+      if (isRestaurantStaff) {
+        set({ features: defaultRestaurantFeatureMap(), featuresStatus: 'ready', featuresError: null })
+        return
+      }
       set({
         features: {},
         featuresStatus: 'error',
@@ -116,6 +140,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       })
 
       set({ user: result.user, isAuthenticated: true })
+      if (result.user.tenant?.slug) {
+        await tokenBridge.setTenantSlug(result.user.tenant.slug).catch(() => {})
+      }
       await get().loadFeatures(result.user)
     } finally {
       set({ isLoading: false })
@@ -129,6 +156,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // proceed with local logout even if API fails
     }
     await tokenBridge.clearTokens()
+    const { clearRestaurantSettingsCache } = await import('@/api/settings.api')
+    clearRestaurantSettingsCache()
     set({ user: null, isAuthenticated: false, features: {}, featuresStatus: 'idle', featuresError: null })
   },
 
@@ -174,6 +203,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
 // Listen for 401 refresh failures
 onAuthExpired(() => {
+  import('@/api/settings.api').then(({ clearRestaurantSettingsCache }) => clearRestaurantSettingsCache()).catch(() => {})
   useAuthStore.getState().setUser(null)
   useAuthStore.setState({ isAuthenticated: false, features: {}, featuresStatus: 'idle', featuresError: null })
 })

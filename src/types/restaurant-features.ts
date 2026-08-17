@@ -22,10 +22,31 @@ export interface RestaurantFeatureFlag {
   config?: unknown
 }
 
+/** Backend / legacy flag names → desktop nav feature keys */
+const FEATURE_ALIASES: Record<string, RestaurantFeature> = {
+  KITCHEN_DISPLAY: 'KOT_KITCHEN',
+  INVENTORY: 'INVENTORY_DASHBOARD',
+  EMPLOYEE_ATTENDANCE: 'ATTENDANCE',
+}
+
+export function normalizeFeatureKey(key: string): RestaurantFeature | null {
+  const upper = key.toUpperCase()
+  if (isRestaurantFeature(upper)) return upper
+  return FEATURE_ALIASES[upper] ?? null
+}
+
 export function toRestaurantFeatureMap(flags: RestaurantFeatureFlag[]): RestaurantFeatureMap {
   return flags.reduce<RestaurantFeatureMap>((map, flag) => {
-    const key = flag.key.toUpperCase()
-    if (isRestaurantFeature(key)) map[key] = flag.enabled === true
+    const key = normalizeFeatureKey(flag.key)
+    if (key) map[key] = flag.enabled === true
+    return map
+  }, {})
+}
+
+/** When the tenants feature-flags API is unavailable, unblock restaurant staff. */
+export function defaultRestaurantFeatureMap(): RestaurantFeatureMap {
+  return RESTAURANT_FEATURES.reduce<RestaurantFeatureMap>((map, feature) => {
+    if (feature !== 'SAAS_ADMIN') map[feature] = true
     return map
   }, {})
 }

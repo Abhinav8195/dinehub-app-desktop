@@ -148,7 +148,7 @@ describe('main-process DineHub client', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('uploads menu images through the files endpoint without manually setting Content-Type', async () => {
+  it('uploads menu images through the item upload endpoint without manually setting Content-Type', async () => {
     vi.mocked(fetch).mockResolvedValue(json({ success: true, data: { imageUrl: '/uploads/menu/pizza.png' } }))
     const progress = vi.fn()
     await uploadMenuImage('item', {
@@ -158,7 +158,7 @@ describe('main-process DineHub client', () => {
       base64: Buffer.from('test').toString('base64')
     }, progress)
     const [url, init] = vi.mocked(fetch).mock.calls[0]
-    expect(String(url)).toContain('/files/upload')
+    expect(String(url)).toContain('/menu/items/upload-image')
     expect(new Headers(init?.headers).has('Content-Type')).toBe(false)
     expect(init?.body).toBeInstanceOf(FormData)
     expect(progress).toHaveBeenLastCalledWith(100)
@@ -182,7 +182,7 @@ describe('main-process DineHub client', () => {
       size: 2 * 1024 * 1024,
       base64: Buffer.from('combo').toString('base64')
     }, vi.fn())
-    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('/files/upload')
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('/combos/upload-image')
     expect(new Headers(vi.mocked(fetch).mock.calls[0][1]?.headers).has('Content-Type')).toBe(false)
     expect(result).toMatchObject({ data: { imageUrl: '/uploads/menu/combo.jpg' } })
   })
