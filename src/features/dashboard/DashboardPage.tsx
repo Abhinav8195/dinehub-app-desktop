@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import {
   DollarSign, ShoppingBag, Users, TrendingUp, ChefHat,
-  ArrowRight, Clock, Utensils, Package
+  ArrowRight, Utensils, Package
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar
@@ -46,10 +46,6 @@ export default function DashboardPage() {
 
   const stats = data?.stats
   const tables = data?.tables
-  const activitiesHaveTenantIds = data?.activities.some((activity) => activity.tenantId || activity.restaurantId) ?? false
-  const restaurantActivities = (data?.activities ?? []).filter((activity) =>
-    !activitiesHaveTenantIds || activity.tenantId === tenantId || activity.restaurantId === tenantId
-  )
 
   if (!featureAccess.isLoading && !featureAccess.hasFeature('DASHBOARD')) {
     return (
@@ -226,34 +222,6 @@ export default function DashboardPage() {
                 </div>
               </CardContent>
             </Card></FeatureGate>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-base">Activity Timeline</CardTitle>
-                <Clock className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="h-[260px] space-y-4 overflow-y-auto pr-2">
-                  {restaurantActivities.map((activity, i, arr) => (
-                    <div key={activity.id} className="flex gap-3">
-                      <div className="flex flex-col items-center">
-                        <div className="h-2 w-2 rounded-full bg-primary mt-2" />
-                        {i < arr.length - 1 && <div className="w-px flex-1 bg-border mt-1" />}
-                      </div>
-                      <div className="flex-1 pb-4">
-                        <p className="text-sm">{activity.message}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {new Date(activity.createdAt).toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                  {!restaurantActivities.length && (
-                    <p className="text-sm text-muted-foreground">No recent activity</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
           </motion.div>
 
           <motion.div variants={item}>

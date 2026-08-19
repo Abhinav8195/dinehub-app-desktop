@@ -10,9 +10,9 @@ import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { tenantsApi } from '@/api/tenants.api'
 import { billingApi } from '@/api/phase2.api'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatDate } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
-import { FEATURE_LABELS, isSubscriptionActive } from '@/lib/entitlements'
+import { FEATURE_LABELS, isSubscriptionActive, subscriptionDaysLeft, subscriptionExpiryDate } from '@/lib/entitlements'
 import type { FeatureKey, TenantSubscription } from '@/api/types/billing.types'
 import type { TenantPlan } from '@/api/types/tenants.types'
 
@@ -52,6 +52,8 @@ export default function SaaSPage() {
   const invoices = subscription?.invoices ?? []
   const typedPlans = plans as TenantPlan[]
   const currentPlan = subscription?.plan ?? null
+  const planEnds = subscriptionExpiryDate(subscription)
+  const daysLeft = subscriptionDaysLeft(subscription)
   const availablePlans = typedPlans.filter((plan) =>
     plan.isActive !== false &&
     (currentPlan?.id ? plan.id !== currentPlan.id : plan.name !== currentPlan?.name)
@@ -123,13 +125,24 @@ export default function SaaSPage() {
                     <CardHeader>
                       <div className="flex items-center justify-between">
                         <CardTitle>{currentPlan.name}</CardTitle>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           <Badge><Crown className="mr-1 h-3 w-3" /> Current</Badge>
                           <Badge variant={isSubscriptionActive(subscription as TenantSubscription) ? 'success' : 'destructive'}>
                             {subscription?.status ?? 'missing'}
                           </Badge>
+                          {daysLeft !== null && (
+                            <Badge variant={daysLeft <= 7 ? 'warning' : 'secondary'}>
+                              {daysLeft === 0 ? 'Expired' : `${daysLeft} days left`}
+                            </Badge>
+                          )}
                         </div>
                       </div>
+                      <CardDescription className="mt-2">
+                        {planEnds
+                          ? `Valid until ${formatDate(planEnds.toISOString())}`
+                          : 'No expiry date on file'}
+                        {subscription?.billingCycle ? ` · ${subscription.billingCycle}` : ''}
+                      </CardDescription>
                     </CardHeader>
                     <CardContent>
                       <h4 className="mb-2 text-sm font-semibold">Your features</h4>

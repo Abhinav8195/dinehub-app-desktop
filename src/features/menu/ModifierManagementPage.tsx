@@ -106,7 +106,11 @@ export default function ModifierManagementPage() {
           : groups.isError ? <Card><CardContent className="p-10 text-center"><p className="text-danger">Failed to load modifier groups.</p><Button className="mt-3" onClick={() => groups.refetch()}>Try again</Button></CardContent></Card>
           : !groups.data?.length ? <Card><CardContent className="p-12 text-center text-muted-foreground">No modifier groups yet.<br /><Button className="mt-4" onClick={() => openGroup()}>Create first group</Button></CardContent></Card>
           : <div className="space-y-4">{groups.data.map((group) => {
-            const attachedIds = new Set((group.menuItems ?? []).map((item) => item.id))
+            const attachedIds = new Set(
+              (group.menuItems ?? [])
+                .map((item) => (item as { menuItemId?: string; id?: string }).menuItemId ?? item.id)
+                .filter(Boolean)
+            )
             return <Card key={group.id} className={!group.isActive ? 'opacity-65' : ''}><CardContent className="p-5 space-y-4">
               <div className="flex items-center gap-2">
                 <div className="mr-auto"><div className="flex items-center gap-2"><h2 className="font-semibold">{group.name}</h2><Badge variant={group.required ? 'warning' : 'secondary'}>{group.required ? 'Required' : 'Optional'}</Badge></div><p className="text-sm text-muted-foreground">Choose {group.minSelect}–{group.maxSelect} · {attachedIds.size} menu items</p></div>
@@ -127,8 +131,25 @@ export default function ModifierManagementPage() {
                 </div>
               </div>
               <details><summary className="cursor-pointer text-sm font-medium">Menu-item attachments ({attachedIds.size})</summary>
-                <div className="mt-3 grid max-h-48 gap-2 overflow-y-auto md:grid-cols-3">{(menuItems.data ?? []).map((item) =>
-                  <label key={item.id} className="flex items-center gap-2 rounded border p-2 text-sm"><input type="checkbox" checked={attachedIds.has(item.id)} onChange={() => toggleAttachment(group, item.id, attachedIds.has(item.id))} />{item.name}</label>)}
+                <div className="mt-3 grid max-h-48 gap-2 overflow-y-auto md:grid-cols-3">
+                  {menuItems.isLoading && <p className="col-span-full text-sm text-muted-foreground">Loading menu items…</p>}
+                  {menuItems.isError && <p className="col-span-full text-sm text-danger">Failed to load menu items. <button type="button" className="underline" onClick={() => menuItems.refetch()}>Retry</button></p>}
+                  {!menuItems.isLoading && !(menuItems.data ?? []).length && <p className="col-span-full text-sm text-muted-foreground">No menu items available.</p>}
+                  {(menuItems.data ?? []).map((item) => {
+                    const attached = attachedIds.has(item.id)
+                    return (
+                      <label key={item.id} className={`flex cursor-pointer items-center gap-2 rounded border p-2 text-sm ${attached ? 'border-primary bg-primary/5' : ''}`}>
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-primary"
+                          checked={attached}
+                          disabled={mutation.isPending}
+                          onChange={() => toggleAttachment(group, item.id, attached)}
+                        />
+                        <span className="flex-1">{item.name}</span>
+                      </label>
+                    )
+                  })}
                 </div>
               </details>
             </CardContent></Card>

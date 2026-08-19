@@ -58,8 +58,9 @@ export const authApi = {
     return mapUser(raw as never)
   },
 
-  changePassword: (body: ChangePasswordRequest) =>
-    unwrap(apiClient.post<ApiResponse<null>>('/auth/change-password', body)),
+  changePassword: async (body: ChangePasswordRequest) => {
+    await unwrap(apiClient.post<ApiResponse<null | undefined>>('/auth/change-password', body))
+  },
 
   getSessions: async () => {
     const raw = await unwrap(apiClient.get<ApiResponse<AuthSession[]>>('/auth/sessions'))
@@ -101,8 +102,9 @@ export const authApi = {
   unassignRole: (userId: string, roleId: string) =>
     unwrap(apiClient.delete<ApiResponse<null>>(`/auth/roles/assign/${userId}/${roleId}`)),
 
-  setPin: (body: SetPinRequest) =>
-    unwrap(apiClient.post<ApiResponse<null>>('/auth/pin/set', body)),
+  setPin: async (body: SetPinRequest) => {
+    await unwrap(apiClient.post<ApiResponse<null | undefined>>('/auth/pin/set', body))
+  },
 
   pinLogin: async (body: PinLoginRequest) => {
     const raw = await unwrap(apiClient.post<ApiResponse<LoginResponse>>('/auth/pin/login', body))

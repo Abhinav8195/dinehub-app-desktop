@@ -2,7 +2,7 @@ import {
   LayoutDashboard, ShoppingCart, ClipboardList, Grid3X3, QrCode,
   ChefHat, UtensilsCrossed, Package, ShoppingBag, Users, UserCog,
   CalendarDays, BarChart3, Megaphone, Calculator, Settings, Building2,
-  Bell, LineChart, Shield, Monitor, Clock3, type LucideIcon
+  Bell, LineChart, Shield, Monitor, Clock3, BellRing, Tag, type LucideIcon
 } from 'lucide-react'
 import type { RestaurantFeature } from '@/types/restaurant-features'
 
@@ -60,6 +60,14 @@ export const NAVIGATION: NavItem[] = [
     icon: Grid3X3,
     permission: 'tables.view'
     , feature: 'TABLE_MANAGEMENT'
+  },
+  {
+    id: 'waiter-calls',
+    title: 'Waiter Calls',
+    href: p('/waiter-calls'),
+    icon: BellRing,
+    permission: 'qr.view',
+    feature: 'QR_ORDERING',
   },
   {
     id: 'qr-ordering',
@@ -130,6 +138,14 @@ export const NAVIGATION: NavItem[] = [
     , feature: 'CUSTOMERS'
   },
   {
+    id: 'offers',
+    title: 'Promo / Vouchers',
+    href: p('/offers'),
+    icon: Tag,
+    permission: 'crm.view',
+    feature: 'CRM',
+  },
+  {
     id: 'users',
     title: 'User Management',
     href: p('/users'),
@@ -161,14 +177,6 @@ export const NAVIGATION: NavItem[] = [
     // plan/permission seed. API actions remain server-authorized.
     permission: 'employees.view',
     feature: 'EMPLOYEES'
-  },
-  {
-    id: 'staff',
-    title: 'Staff & Permissions',
-    href: p('/staff'),
-    icon: Shield,
-    permission: 'staff.view'
-    , feature: 'STAFF_PERMISSIONS'
   },
   {
     id: 'reservations',
@@ -277,12 +285,9 @@ export const QUICK_ACTIONS = [
   { id: 'reports', title: 'View Reports', href: p('/reports'), shortcut: 'F5', feature: 'REPORTS' as RestaurantFeature }
 ]
 
+/** Only English until full i18n is shipped. */
 export const LANGUAGES = [
   { code: 'en', label: 'English', flag: '🇺🇸' },
-  { code: 'es', label: 'Español', flag: '🇪🇸' },
-  { code: 'fr', label: 'Français', flag: '🇫🇷' },
-  { code: 'ar', label: 'العربية', flag: '🇸🇦' },
-  { code: 'hi', label: 'हिन्दी', flag: '🇮🇳' }
 ]
 
 export const RESTAURANTS = [

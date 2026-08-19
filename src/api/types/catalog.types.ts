@@ -9,7 +9,8 @@ export interface ModifierOption {
 
 export interface ModifierMenuItem {
   id: string
-  name: string
+  name?: string
+  menuItemId?: string
   category?: string
 }
 

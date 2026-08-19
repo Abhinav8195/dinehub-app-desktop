@@ -23,6 +23,16 @@ export function OrderDetailDialog({ order, open, onOpenChange, onStatusChange, s
   const requestTransition = (next: string) => {
     if (!onStatusChange || !transitions.includes(next)) return
     if (['cancelled', 'refunded'].includes(next) && !window.confirm(`${labelize(next)} order ${order.orderNumber}? This action affects fulfillment or payment records.`)) return
+    if (next === 'completed') {
+      const unpaid = normalize(order.paymentStatus || '') !== 'paid' && !order.paymentMethod
+      const tableNote = order.table
+        ? `This will free table ${order.table.label || order.table.number} and record the sale.`
+        : 'This will mark the order complete and record the sale.'
+      const paymentNote = unpaid
+        ? '\n\nPayment still looks pending. Complete only after you have collected payment.'
+        : '\n\n(Mark complete on receiving payment.)'
+      if (!window.confirm(`Mark order ${order.orderNumber} completed?\n\n${tableNote}${paymentNote}`)) return
+    }
     onStatusChange(order.id, next)
   }
   const history = order.statusHistory?.length ? order.statusHistory : [{ status: order.status, createdAt: order.updatedAt || order.createdAt }]
@@ -65,7 +75,34 @@ export function OrderDetailDialog({ order, open, onOpenChange, onStatusChange, s
           </div></section>
 
           <PermissionGuard permission="orders.update">
-            <section className="rounded-xl border p-4"><h3 className="font-semibold">Update status</h3>{transitions.length ? <><p className="mt-1 text-xs text-muted-foreground">Only valid next steps are enabled.</p><div className="mt-3 grid gap-2">{transitions.map((status) => <Button key={status} variant={status === 'cancelled' || status === 'refunded' ? 'destructive' : 'outline'} disabled={statusUpdating} onClick={() => requestTransition(status)}>{(status === 'cancelled' || status === 'refunded') && <AlertTriangle className="mr-2 h-4 w-4" />}{labelize(status)}</Button>)}</div></> : <p className="mt-2 text-sm text-muted-foreground">No further status changes are available.</p>}</section>
+            <section className="rounded-xl border p-4">
+              <h3 className="font-semibold">Update status</h3>
+              {transitions.length ? (
+                <>
+                  <p className="mt-1 text-xs text-muted-foreground">Only valid next steps are enabled.</p>
+                  <div className="mt-3 grid gap-2">
+                    {transitions.map((status) => (
+                      <Button
+                        key={status}
+                        variant={status === 'cancelled' || status === 'refunded' ? 'destructive' : status === 'completed' ? 'default' : 'outline'}
+                        disabled={statusUpdating}
+                        onClick={() => requestTransition(status)}
+                      >
+                        {(status === 'cancelled' || status === 'refunded') && <AlertTriangle className="mr-2 h-4 w-4" />}
+                        {status === 'completed' ? 'Mark completed (on payment)' : labelize(status)}
+                      </Button>
+                    ))}
+                  </div>
+                  {transitions.includes('completed') && (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      Mark completed after payment — frees the table and records sales.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="mt-2 text-sm text-muted-foreground">No further status changes are available.</p>
+              )}
+            </section>
           </PermissionGuard>
           {(order.deliveryAddress || order.table) && <div className="flex gap-2 rounded-xl bg-muted/60 p-3 text-sm"><MapPin className="mt-0.5 h-4 w-4 shrink-0" /><span>{order.deliveryAddress || order.table?.label}</span></div>}
         </aside>

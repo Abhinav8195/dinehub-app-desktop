@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import reducer, { addToCart, replaceCartItem } from './posSlice'
+import reducer, {
+  addToCart, discardHeldOrder, holdOrder, replaceCartItem, resumeOrder, setOrderType, setSelectedTable
+} from './posSlice'
 import type { OrderItem } from '@/types'
 
 const line = (lineKey: string, modifiers: OrderItem['modifiers'] = []): OrderItem => ({
@@ -30,5 +32,31 @@ describe('POS cart modifier identity', () => {
     }))
     expect(state.cart).toHaveLength(1)
     expect(state.cart[0].quantity).toBe(2)
+  })
+})
+
+describe('POS hold / resume', () => {
+  it('stores multiple holds and restores the selected one with order type/table', () => {
+    let state = reducer(undefined, setOrderType('dine-in'))
+    state = reducer(state, setSelectedTable('table-9'))
+    state = reducer(state, addToCart(line('menu:burger:large')))
+    state = reducer(state, holdOrder())
+
+    state = reducer(state, setOrderType('takeaway'))
+    state = reducer(state, setSelectedTable(null))
+    state = reducer(state, addToCart(line('menu:burger:small')))
+    state = reducer(state, holdOrder())
+
+    expect(state.heldOrders).toHaveLength(2)
+    const firstHoldId = state.heldOrders[0].id
+    state = reducer(state, resumeOrder(firstHoldId))
+
+    expect(state.cart[0].lineKey).toBe('menu:burger:large')
+    expect(state.orderType).toBe('dine-in')
+    expect(state.selectedTableId).toBe('table-9')
+    expect(state.heldOrders).toHaveLength(1)
+
+    state = reducer(state, discardHeldOrder(state.heldOrders[0].id))
+    expect(state.heldOrders).toHaveLength(0)
   })
 })

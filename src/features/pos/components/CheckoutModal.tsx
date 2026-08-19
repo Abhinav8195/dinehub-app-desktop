@@ -232,9 +232,15 @@ export function CheckoutModal({
 
             <div className="rounded-xl border p-4 space-y-2 bg-muted/30">
               <div className="flex justify-between text-sm"><span>Subtotal</span><span>{formatCurrency(breakdown.subtotal)}</span></div>
-              <div className="flex justify-between text-sm"><span>GST ({taxSettings.gstPercent}%)</span><span>{formatCurrency(breakdown.gstAmount)}</span></div>
-              <div className="flex justify-between text-sm"><span>SGST ({taxSettings.sgstPercent}%)</span><span>{formatCurrency(breakdown.sgstAmount)}</span></div>
-              <div className="flex justify-between text-sm"><span>CGST ({taxSettings.cgstPercent}%)</span><span>{formatCurrency(breakdown.cgstAmount)}</span></div>
+              {taxSettings.gstPercent > 0 && (
+                <div className="flex justify-between text-sm"><span>IGST ({taxSettings.gstPercent}%)</span><span>{formatCurrency(breakdown.gstAmount)}</span></div>
+              )}
+              {taxSettings.cgstPercent > 0 && (
+                <div className="flex justify-between text-sm"><span>CGST ({taxSettings.cgstPercent}%)</span><span>{formatCurrency(breakdown.cgstAmount)}</span></div>
+              )}
+              {taxSettings.sgstPercent > 0 && (
+                <div className="flex justify-between text-sm"><span>SGST ({taxSettings.sgstPercent}%)</span><span>{formatCurrency(breakdown.sgstAmount)}</span></div>
+              )}
               {breakdown.serviceCharge > 0 && (
                 <div className="flex justify-between text-sm"><span>Service Charge</span><span>{formatCurrency(breakdown.serviceCharge)}</span></div>
               )}
@@ -245,13 +251,16 @@ export function CheckoutModal({
               <div className="flex justify-between font-bold text-lg"><span>Total Amount</span><span className="text-primary">{formatCurrency(breakdown.total)}</span></div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <Button type="button" size="lg" variant="outline" disabled={submitting} onClick={() => handleSubmit('CASH')}>
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Cash'}
-              </Button>
-              <Button type="button" size="lg" disabled={submitting} onClick={() => handleSubmit('CARD')}>
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Order Now'}
-              </Button>
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">Choose how the customer is paying. Both options place the order as paid.</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button type="button" size="lg" variant="outline" disabled={submitting} onClick={() => handleSubmit('CASH')}>
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Pay with Cash'}
+                </Button>
+                <Button type="button" size="lg" disabled={submitting} onClick={() => handleSubmit('CARD')}>
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Pay with Card'}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

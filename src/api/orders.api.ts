@@ -7,10 +7,18 @@ import type {
   PosOrder,
 } from './types/pos.types'
 
+export type OrderPeriodPreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'month' | 'custom' | 'all'
+
 export interface OrderListParams {
   search?: string
+  /** ISO datetime — used for client-side filtering / local ranges */
   from?: string
   to?: string
+  /** Prefer this for server filtering (maps to backend `period`) */
+  period?: OrderPeriodPreset
+  /** YYYY-MM-DD for custom period */
+  fromDate?: string
+  toDate?: string
   status?: string
   paymentStatus?: string
   paymentMethod?: string
@@ -29,8 +37,58 @@ export interface OrderListResult {
 
 type OrderListPayload = PosOrder[] | { orders?: PosOrder[]; data?: PosOrder[]; meta?: PaginationMeta }
 
+const PERIOD_MAP: Record<OrderPeriodPreset, string> = {
+  today: 'today',
+  yesterday: 'yesterday',
+  last7: 'last_7_days',
+  last30: 'last_30_days',
+  month: 'this_month',
+  custom: 'custom',
+  all: 'all_time',
+}
+
+function toYmd(isoOrDate?: string) {
+  if (!isoOrDate) return undefined
+  if (/^\d{4}-\d{2}-\d{2}$/.test(isoOrDate)) return isoOrDate
+  const date = new Date(isoOrDate)
+  if (Number.isNaN(date.getTime())) return undefined
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+/** Map UI filter params to the Nest OrderListQueryDto shape. */
+export function toBackendOrderParams(params: OrderListParams = {}) {
+  const periodKey = params.period
+    ?? (params.from || params.to || params.fromDate || params.toDate ? 'custom' : undefined)
+  const period = periodKey ? PERIOD_MAP[periodKey] : undefined
+  const fromDate = params.fromDate || (period === 'custom' ? toYmd(params.from) : undefined)
+  const toDate = params.toDate || (period === 'custom' ? toYmd(params.to) : undefined)
+  const limit = Math.min(Math.max(params.limit ?? 20, 1), 100)
+
+  return {
+    period,
+    from_date: fromDate,
+    to_date: toDate,
+    search: params.search,
+    status: params.status,
+    order_type: params.type,
+    payment_status: params.paymentStatus,
+    payment_method: params.paymentMethod
+      ? String(params.paymentMethod).toUpperCase().replace(/-/g, '_')
+      : undefined,
+    branch_id: params.branchId,
+    page: params.page ?? 1,
+    limit,
+    sortBy: params.sortBy ?? 'createdAt',
+    sortOrder: params.sortOrder ?? 'desc',
+  }
+}
+
 async function requestOrders(params?: OrderListParams, signal?: AbortSignal): Promise<OrderListResult> {
-  const response = await apiClient.get<ApiResponse<OrderListPayload>>('/orders', { params, signal })
+  const query = toBackendOrderParams(params ?? {})
+  const response = await apiClient.get<ApiResponse<OrderListPayload>>('/orders', { params: query, signal })
   const result = await unwrap(Promise.resolve(response))
   const responseMeta = response.data.meta
   if (Array.isArray(result)) return { orders: result, meta: responseMeta }

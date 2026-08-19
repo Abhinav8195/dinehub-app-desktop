@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Save, Printer, CreditCard, Globe, Receipt, Building, RefreshCw, RotateCcw } from 'lucide-react'
+import { Save, Printer, CreditCard, Globe, Receipt, Building, RefreshCw, RotateCcw, Clock } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { PageShell } from '@/components/common/PageShell'
 import { Button } from '@/components/ui/button'
@@ -16,19 +16,39 @@ import { BRAND } from '@/constants/brand'
 import { BrandLogo } from '@/components/brand/BrandLogo'
 import { buildReceiptHtml } from '@/lib/print/receipt'
 import { settingsApi } from '@/api/settings.api'
+import { dashboardApi } from '@/api/dashboard.api'
 import { useTaxSettings, useInvalidateTaxSettings } from '@/hooks/useTaxSettings'
 import { printersApi } from '@/api/phase1.api'
+import { useAuth } from '@/hooks/useAuth'
+import { useSelector } from 'react-redux'
+import type { RootState } from '@/store'
 
 export default function SettingsPage() {
   const { data: taxSettings } = useTaxSettings()
   const invalidateTax = useInvalidateTaxSettings()
   const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const selectedRestaurantId = useSelector((state: RootState) => state.app.selectedRestaurantId)
+  const tenantId = user?.isSuperAdmin || user?.userType === 'SUPER_ADMIN'
+    ? selectedRestaurantId
+    : user?.tenantId
   const { data: restaurant } = useQuery({ queryKey: ['settings', 'restaurant'], queryFn: settingsApi.getRestaurant })
   const { data: printers = [] } = useQuery({ queryKey: ['printers'], queryFn: printersApi.list })
+  const { data: dashboard } = useQuery({
+    queryKey: ['dashboard', 'stats', 'settings-activity', tenantId],
+    queryFn: () => dashboardApi.getStats(tenantId),
+    enabled: Boolean(tenantId),
+  })
+  const activitiesHaveTenantIds = dashboard?.activities.some((activity) => activity.tenantId || activity.restaurantId) ?? false
+  const restaurantActivities = (dashboard?.activities ?? []).filter((activity) =>
+    !activitiesHaveTenantIds || activity.tenantId === tenantId || activity.restaurantId === tenantId
+  )
 
   const [gstPercent, setGstPercent] = useState('5')
   const [sgstPercent, setSgstPercent] = useState('2.5')
   const [cgstPercent, setCgstPercent] = useState('2.5')
+  const [igstPercent, setIgstPercent] = useState('0')
+  const [taxMode, setTaxMode] = useState<'intra' | 'inter'>('intra')
   const [serviceChargePercent, setServiceChargePercent] = useState('0')
   const [taxInclusive, setTaxInclusive] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<Awaited<ReturnType<typeof window.electronAPI.updates.getStatus>> | null>(null)
@@ -40,13 +60,40 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (taxSettings) {
-      setGstPercent(String(taxSettings.gstPercent))
+      const cgst = Number(taxSettings.cgstPercent) || 0
+      const sgst = Number(taxSettings.sgstPercent) || 0
+      const gst = Number(taxSettings.gstPercent) || 0
       setSgstPercent(String(taxSettings.sgstPercent))
       setCgstPercent(String(taxSettings.cgstPercent))
+      if (cgst === 0 && sgst === 0 && gst > 0) {
+        // Inter-state: gstPercent stores IGST
+        setTaxMode('inter')
+        setIgstPercent(String(gst))
+        setGstPercent(String(gst))
+      } else {
+        // Intra-state: CGST + SGST halves; gstPercent must stay 0 in tax math
+        setTaxMode('intra')
+        setIgstPercent('0')
+        setGstPercent(String(cgst + sgst || gst || 5))
+      }
       setServiceChargePercent(String(taxSettings.serviceChargePercent))
       setTaxInclusive(taxSettings.taxInclusive)
     }
   }, [taxSettings])
+
+  const applyGstSlab = (slab: number, mode: 'intra' | 'inter' = taxMode) => {
+    setGstPercent(String(slab))
+    if (mode === 'inter') {
+      setIgstPercent(String(slab))
+      setCgstPercent('0')
+      setSgstPercent('0')
+    } else {
+      const half = slab / 2
+      setIgstPercent('0')
+      setCgstPercent(String(half))
+      setSgstPercent(String(half))
+    }
+  }
   useEffect(() => {
     if (!restaurant) return
     setRestaurantForm({
@@ -79,13 +126,27 @@ export default function SettingsPage() {
   }
 
   const saveTaxMutation = useMutation({
-    mutationFn: () => settingsApi.updateTax({
-      gstPercent: parseFloat(gstPercent) || 0,
-      sgstPercent: parseFloat(sgstPercent) || 0,
-      cgstPercent: parseFloat(cgstPercent) || 0,
-      serviceChargePercent: parseFloat(serviceChargePercent) || 0,
-      taxInclusive,
-    }),
+    mutationFn: () => {
+      const slab = parseFloat(gstPercent) || 0
+      const half = slab / 2
+      // Tax engine sums gst + cgst + sgst. Intra = CGST+SGST only; Inter = IGST in gstPercent.
+      if (taxMode === 'inter') {
+        return settingsApi.updateTax({
+          gstPercent: parseFloat(igstPercent) || slab,
+          sgstPercent: 0,
+          cgstPercent: 0,
+          serviceChargePercent: parseFloat(serviceChargePercent) || 0,
+          taxInclusive,
+        })
+      }
+      return settingsApi.updateTax({
+        gstPercent: 0,
+        sgstPercent: parseFloat(sgstPercent) || half,
+        cgstPercent: parseFloat(cgstPercent) || half,
+        serviceChargePercent: parseFloat(serviceChargePercent) || 0,
+        taxInclusive,
+      })
+    },
     onSuccess: () => {
       invalidateTax()
       toast.success('Tax settings saved — POS will use new rates')
@@ -114,6 +175,7 @@ export default function SettingsPage() {
             <TabsTrigger value="payment"><CreditCard className="h-3.5 w-3.5 mr-1" /> Payment</TabsTrigger>
             <TabsTrigger value="receipt"><Receipt className="h-3.5 w-3.5 mr-1" /> Receipt</TabsTrigger>
             <TabsTrigger value="language"><Globe className="h-3.5 w-3.5 mr-1" /> Language</TabsTrigger>
+            <TabsTrigger value="activity"><Clock className="h-3.5 w-3.5 mr-1" /> Activity</TabsTrigger>
             <TabsTrigger value="about">About</TabsTrigger>
           </TabsList>
 
@@ -136,9 +198,11 @@ export default function SettingsPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label>Default Language</Label>
-                    <Select value={restaurantForm.defaultLanguage} onValueChange={(defaultLanguage) => setRestaurantForm({ ...restaurantForm, defaultLanguage })}><SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="hi">Hindi</SelectItem></SelectContent>
+                    <Select value="en" onValueChange={() => undefined} disabled>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="en">English</SelectItem></SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground">Only English is available until additional languages are ready.</p>
                   </div>
                 </div>
                 <div className="flex items-center justify-between rounded-xl border p-4">
@@ -149,7 +213,7 @@ export default function SettingsPage() {
                   name: restaurantForm.name.trim(), legalName: restaurantForm.legalName.trim() || undefined,
                   address: restaurantForm.address.trim() || undefined, phone: restaurantForm.phone.trim() || undefined,
                   gstin: restaurantForm.gstin.trim() || undefined, fssaiNumber: restaurantForm.fssaiNumber.trim() || undefined,
-                  defaultLanguage: restaurantForm.defaultLanguage, kotEnabled: restaurantForm.kotEnabled,
+                  defaultLanguage: 'en', kotEnabled: restaurantForm.kotEnabled,
                 })} disabled={saveRestaurantMutation.isPending}><Save className="h-4 w-4 mr-2" /> Save Restaurant</Button>
               </CardContent>
             </Card>
@@ -187,28 +251,90 @@ export default function SettingsPage() {
           <TabsContent value="tax" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Tax Configuration</CardTitle>
-                <CardDescription>Set GST, SGST, CGST rates — applied dynamically on POS checkout</CardDescription>
+                <CardTitle className="text-base">Tax Configuration (GST)</CardTitle>
+                <CardDescription>
+                  Indian GST slabs: 5%, 12%, 18%, 28%. Restaurants commonly use 5% or 18%.
+                  Intra-state splits GST into CGST + SGST (half each). Inter-state uses IGST.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 max-w-2xl">
+                <div className="space-y-2">
+                  <Label>GST slab</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {[5, 12, 18, 28].map((slab) => (
+                      <Button
+                        key={slab}
+                        type="button"
+                        size="sm"
+                        variant={Number(gstPercent) === slab ? 'default' : 'outline'}
+                        onClick={() => applyGstSlab(slab)}
+                      >
+                        {slab}%
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Supply type</Label>
+                  <Select
+                    value={taxMode}
+                    onValueChange={(mode: 'intra' | 'inter') => {
+                      setTaxMode(mode)
+                      applyGstSlab(Number(gstPercent) || 5, mode)
+                    }}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="intra">Intra-state (CGST + SGST)</SelectItem>
+                      <SelectItem value="inter">Inter-state (IGST)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>GST (%)</Label>
-                    <Input type="number" step="0.1" value={gstPercent} onChange={(e) => setGstPercent(e.target.value)} />
+                    <Label>GST total / slab (%)</Label>
+                    <Input type="number" step="0.1" value={gstPercent} onChange={(e) => {
+                      const next = e.target.value
+                      setGstPercent(next)
+                      const slab = Number(next)
+                      if (Number.isFinite(slab) && slab >= 0) applyGstSlab(slab)
+                    }} />
+                    <p className="text-[11px] text-muted-foreground">
+                      Saved as CGST+SGST (intra) or IGST (inter). Rates are not double-counted.
+                    </p>
                   </div>
                   <div className="space-y-2">
-                    <Label>SGST (%)</Label>
-                    <Input type="number" step="0.1" value={sgstPercent} onChange={(e) => setSgstPercent(e.target.value)} />
+                    <Label>IGST (%)</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      value={igstPercent}
+                      disabled={taxMode === 'intra'}
+                      onChange={(e) => {
+                        const next = e.target.value
+                        setIgstPercent(next)
+                        setGstPercent(next)
+                        setCgstPercent('0')
+                        setSgstPercent('0')
+                      }}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>CGST (%)</Label>
-                    <Input type="number" step="0.1" value={cgstPercent} onChange={(e) => setCgstPercent(e.target.value)} />
+                    <Input type="number" step="0.1" value={cgstPercent} disabled={taxMode === 'inter'} onChange={(e) => setCgstPercent(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>SGST (%)</Label>
+                    <Input type="number" step="0.1" value={sgstPercent} disabled={taxMode === 'inter'} onChange={(e) => setSgstPercent(e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label>Service Charge (%)</Label>
                     <Input type="number" step="0.1" value={serviceChargePercent} onChange={(e) => setServiceChargePercent(e.target.value)} />
                   </div>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Example: choose 12% intra-state → CGST 6% + SGST 6%. Choose 12% inter-state → IGST 12%.
+                </p>
                 <div className="flex items-center justify-between">
                   <Label>Tax Inclusive Pricing</Label>
                   <Switch checked={taxInclusive} onCheckedChange={setTaxInclusive} />
@@ -277,6 +403,68 @@ export default function SettingsPage() {
                 >
                   <Receipt className="h-4 w-4 mr-2" /> Preview Sample Receipt
                 </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="language" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Language & region</CardTitle>
+                <CardDescription>Only languages that are fully available are listed here.</CardDescription>
+              </CardHeader>
+              <CardContent className="max-w-lg space-y-4">
+                <div className="space-y-2">
+                  <Label>Available languages</Label>
+                  <Select value="en" disabled>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="en">English (United States)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="rounded-lg border bg-muted/30 p-4 space-y-2 text-sm">
+                  <p><span className="font-medium">Active language:</span> English</p>
+                  <p><span className="font-medium">Locale:</span> en-US</p>
+                  <p><span className="font-medium">Date format:</span> DD MMM YYYY</p>
+                  <p><span className="font-medium">Number / currency format:</span> follows restaurant country settings</p>
+                  <p className="text-muted-foreground">
+                    Hindi and other Indian languages are not enabled yet. When a language pack is ready, it will appear in this list automatically.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="activity" className="mt-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Activity Timeline</CardTitle>
+                  <CardDescription>Recent restaurant activity for admin review</CardDescription>
+                </div>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="max-h-[420px] space-y-4 overflow-y-auto pr-2">
+                  {restaurantActivities.map((activity, i, arr) => (
+                    <div key={activity.id} className="flex gap-3">
+                      <div className="flex flex-col items-center">
+                        <div className="mt-2 h-2 w-2 rounded-full bg-primary" />
+                        {i < arr.length - 1 && <div className="mt-1 w-px flex-1 bg-border" />}
+                      </div>
+                      <div className="flex-1 pb-4">
+                        <p className="text-sm">{activity.message}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {new Date(activity.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  {!restaurantActivities.length && (
+                    <p className="py-8 text-center text-sm text-muted-foreground">No recent activity</p>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

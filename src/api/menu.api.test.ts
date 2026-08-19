@@ -42,7 +42,7 @@ describe('menu services', () => {
     requestDineHub.mockResolvedValueOnce(ok([item])).mockResolvedValueOnce(ok(item))
       .mockResolvedValueOnce(ok(item)).mockResolvedValueOnce(ok({ ...item, available: false, popular: true }))
       .mockResolvedValueOnce(ok(null))
-    await expect(menuItemService.list('c1', true)).resolves.toEqual([{ ...item, modifierGroups: [] }])
+    await expect(menuItemService.list('c1', true)).resolves.toEqual([{ ...item, isVegetarian: null, dietary: null, modifierGroups: [] }])
     await menuItemService.get('i1')
     await menuItemService.create({ categoryId: 'c1', name: 'Margherita', price: 12, isAvailable: true, isPopular: false })
     const updated = await menuItemService.update('i1', { isAvailable: false, isPopular: true })
@@ -50,6 +50,33 @@ describe('menu services', () => {
     expect(updated).toMatchObject({ available: false, popular: true })
     expect(requestDineHub.mock.calls[2][0].body).toMatchObject({ isAvailable: true, isPopular: false })
     expect(requestDineHub.mock.calls[3][0].body).toMatchObject({ isAvailable: false, isPopular: true })
+  })
+
+  it('maps vegetarian flag from isVegetarian or dietary', async () => {
+    requestDineHub
+      .mockResolvedValueOnce(ok([{ ...item, isVegetarian: true }]))
+      .mockResolvedValueOnce(ok([{ ...item, dietary: 'nonveg' }]))
+    await expect(menuItemService.list(undefined, true)).resolves.toEqual([
+      expect.objectContaining({ isVegetarian: true, dietary: 'veg', modifierGroups: [] }),
+    ])
+    await expect(menuItemService.list(undefined, true)).resolves.toEqual([
+      expect.objectContaining({ isVegetarian: false, dietary: 'nonveg', modifierGroups: [] }),
+    ])
+  })
+
+  it('sends isVegetarian on create/update', async () => {
+    requestDineHub.mockResolvedValue(ok({ ...item, isVegetarian: false, dietary: 'nonveg' }))
+    await menuItemService.create({
+      categoryId: 'c1',
+      name: 'Chicken',
+      price: 20,
+      isAvailable: true,
+      isPopular: false,
+      isVegetarian: false,
+    })
+    await menuItemService.update('i1', { isVegetarian: true })
+    expect(requestDineHub.mock.calls[0][0].body).toMatchObject({ isVegetarian: false })
+    expect(requestDineHub.mock.calls[1][0].body).toMatchObject({ isVegetarian: true })
   })
 
   it('sends bulk availability changes', async () => {

@@ -17,10 +17,14 @@ import RolesPage from '@/features/auth/RolesPage'
 import TenantsAdminPage from '@/features/auth/TenantsAdminPage'
 import SessionsPage from '@/features/auth/SessionsPage'
 import AccountSettingsPage from '@/features/auth/AccountSettingsPage'
+import AcceptInvitePage from '@/features/auth/AcceptInvitePage'
+import ResetPasswordPage from '@/features/auth/ResetPasswordPage'
+import OffersPage from '@/features/offers/OffersPage'
 import DashboardPage from '@/features/dashboard/DashboardPage'
 import POSPage from '@/features/pos/POSPage'
 import OrdersPage from '@/features/orders/OrdersPage'
 import TablesPage from '@/features/tables/TablesPage'
+import WaiterCallsPage from '@/features/waiter-calls/WaiterCallsPage'
 import QROrderingPage from '@/features/qr-ordering/QROrderingPage'
 import KitchenPage from '@/features/kitchen/KitchenPage'
 import MenuPage from '@/features/menu/MenuPage'
@@ -69,6 +73,8 @@ function buildRoutes(): RouteObject[] {
     { path: '/login', element: <GuestGuard><LoginPage /></GuestGuard> },
     { path: '/pin-login', element: <GuestGuard><PinLoginPage /></GuestGuard> },
     { path: '/forgot-password', element: <GuestGuard><ForgotPasswordPage /></GuestGuard> },
+    { path: '/reset-password', element: <ResetPasswordPage /> },
+    { path: '/invites/accept', element: <AcceptInvitePage /> },
     {
       path: '/app',
       element: <AuthGuard><AppLayout /></AuthGuard>,
@@ -81,6 +87,7 @@ function buildRoutes(): RouteObject[] {
             { path: 'orders', element: featurePage('ORDERS', <OrdersPage />, 'orders.view') },
             { path: 'orders/sales', element: featurePage('ORDERS', <AnalyticsPage />, 'orders.view') },
             { path: 'tables', element: featurePage('TABLE_MANAGEMENT', <TablesPage />, 'tables.view') },
+            { path: 'waiter-calls', element: featurePage('QR_ORDERING', <WaiterCallsPage />, 'qr.view') },
             { path: 'qr-ordering', element: featurePage('QR_ORDERING', <QROrderingPage />, 'qr.view') },
             { path: 'kitchen', element: featurePage('KOT_KITCHEN', <KitchenPage />, 'kitchen.view') },
             { path: 'menu', element: featurePage('MENU_MANAGEMENT', <MenuPage />, 'menu.view') },
@@ -100,6 +107,7 @@ function buildRoutes(): RouteObject[] {
             { path: 'inventory/logs', element: featurePage('INVENTORY_LOGS', <InventoryPage />, 'inventory.view') },
             { path: 'purchase', element: featurePage('PURCHASE', <PurchasePage />, 'purchase.view') },
             { path: 'customers', element: featurePage('CUSTOMERS', <CustomersPage />, 'customers.view') },
+            { path: 'offers', element: featurePage('CRM', <OffersPage />, 'crm.view') },
             { path: 'users', element: featurePage('USERS', <UsersManagementPage />, 'users.view') },
             { path: 'users/roles', element: featurePage('ROLES_PERMISSIONS', <UsersManagementPage />, 'roles.read') },
             { path: 'users/departments', element: featurePage('DEPARTMENTS', <UsersManagementPage />, 'departments.view') },

@@ -57,3 +57,25 @@ export function canUseFeature(
 ): boolean {
   return isSuperAdmin || (permissionAllowed && hasFeature(subscription, feature))
 }
+
+/** Prefer paid period end, then trial end. */
+export function subscriptionExpiryDate(
+  subscription: TenantSubscription | null | undefined
+): Date | null {
+  const raw = subscription?.endsAt || subscription?.trialEndsAt
+  if (!raw) return null
+  const date = new Date(raw)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+/** Whole calendar days remaining until plan/trial expiry (0 if expired). */
+export function subscriptionDaysLeft(
+  subscription: TenantSubscription | null | undefined,
+  now = new Date()
+): number | null {
+  const ends = subscriptionExpiryDate(subscription)
+  if (!ends) return null
+  const ms = ends.getTime() - now.getTime()
+  if (ms <= 0) return 0
+  return Math.ceil(ms / (24 * 60 * 60 * 1000))
+}

@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 import {
   addToCart, removeFromCart, updateQuantity, clearCart, replaceCartItem,
-  setOrderType, holdOrder, resumeOrder, setSelectedTable
+  setOrderType, holdOrder, resumeOrder, discardHeldOrder, setSelectedTable
 } from '@/store/slices/posSlice'
 import { addOrder } from '@/store/slices/ordersSlice'
 import { formatCurrency, cn } from '@/lib/utils'
@@ -27,6 +27,7 @@ import { tablesApi } from '@/api/tables.api'
 import { useTaxSettings } from '@/hooks/useTaxSettings'
 import { CheckoutModal } from './components/CheckoutModal'
 import { ModifierSelectionDialog } from './components/ModifierSelectionDialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { RootState } from '@/store'
 import type { MenuItemDto } from '@/api/types/pos.types'
 import type { PosOrder } from '@/api/types/pos.types'
@@ -55,6 +56,7 @@ export default function POSPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [checkoutOpen, setCheckoutOpen] = useState(false)
+  const [holdPickerOpen, setHoldPickerOpen] = useState(false)
   const [catalogView, setCatalogView] = useState<'items' | 'combos'>('items')
   const [modifierItem, setModifierItem] = useState<MenuItemDto | null>(null)
   const [editingLine, setEditingLine] = useState<OrderItem | null>(null)
@@ -429,7 +431,7 @@ export default function POSPage() {
           </div>
           {heldOrders.length > 0 && (
             <Button type="button" variant="secondary" size="sm" className="w-full"
-              onClick={() => { dispatch(resumeOrder(heldOrders[0].id)); toast.success('Order resumed') }}>
+              onClick={() => setHoldPickerOpen(true)}>
               <RotateCcw className="h-3 w-3 mr-1" /> Resume Held ({heldOrders.length})
             </Button>
           )}
@@ -470,6 +472,63 @@ export default function POSPage() {
         onOpenChange={(open) => { if (!open) { setModifierItem(null); setEditingLine(null) } }}
         onConfirm={handleModifierConfirm}
       />
+
+      <Dialog open={holdPickerOpen} onOpenChange={setHoldPickerOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Held orders</DialogTitle>
+            <DialogDescription>Select any held order to resume it into the cart.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-80 space-y-2 overflow-y-auto">
+            {heldOrders.map((held) => {
+              const qty = held.cart.reduce((sum, line) => sum + line.quantity, 0)
+              return (
+                <div key={held.id} className="flex items-center gap-2 rounded-xl border p-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium capitalize">
+                      {held.label ?? `${held.orderType.replace('-', ' ')} · ${qty} items`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(held.timestamp).toLocaleTimeString()} · {held.cart.slice(0, 2).map((line) => line.name).join(', ')}
+                      {held.cart.length > 2 ? '…' : ''}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      if (cart.length > 0) {
+                        toast.message('Current cart will be replaced by the held order')
+                      }
+                      dispatch(resumeOrder(held.id))
+                      setHoldPickerOpen(false)
+                      toast.success('Held order resumed')
+                    }}
+                  >
+                    Resume
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="text-danger"
+                    onClick={() => {
+                      dispatch(discardHeldOrder(held.id))
+                      toast.success('Held order discarded')
+                      if (heldOrders.length <= 1) setHoldPickerOpen(false)
+                    }}
+                  >
+                    Discard
+                  </Button>
+                </div>
+              )
+            })}
+            {!heldOrders.length && (
+              <p className="py-6 text-center text-sm text-muted-foreground">No held orders</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

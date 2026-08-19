@@ -6,7 +6,6 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, Res
 import { BadgePercent, Ban, CircleDollarSign, Receipt, RefreshCw, RotateCcw, ShoppingBag, TrendingUp, UserPlus, Users } from 'lucide-react'
 import { ordersApi } from '@/api/orders.api'
 import { branchesApi } from '@/api/phase1.api'
-import type { PosOrder } from '@/api/types/pos.types'
 import { PageHeader } from '@/components/common/PageHeader'
 import { PageShell } from '@/components/common/PageShell'
 import { Button } from '@/components/ui/button'
@@ -21,7 +20,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { CHART_COLORS } from '@/constants/brand'
 import { formatCurrency, formatDateTime, formatPercent, formatRelativeTime } from '@/lib/utils'
 import type { RootState } from '@/store'
-import { getDateRange, labelize, normalize, previousRange, type DatePreset } from '@/features/orders/order-utils'
+import { getDateRange, labelize, normalize, previousRange, toLocalYmd, type DatePreset } from '@/features/orders/order-utils'
 import { OrderStatusBadge } from '@/features/orders/components/OrderStatusBadge'
 import { aggregateSales, groupRevenue, hourlyOrders, itemRankings, percentChange, salesSeries } from '@/features/orders/sales-utils'
 
@@ -36,13 +35,54 @@ export default function AnalyticsPage() {
   const [branchId, setBranchId] = useState(selectedBranchId || 'all')
   const range = useMemo(() => getDateRange(period, new Date(), fromDate, toDate), [period, fromDate, toDate])
   const prior = useMemo(() => previousRange(range.from, range.to), [range])
-  const baseParams = { branchId: branchId === 'all' ? undefined : branchId, limit: 1000, sortBy: 'createdAt', sortOrder: 'desc' as const }
-  const currentQuery = useQuery({ queryKey: ['orders', 'sales', range, branchId], queryFn: ({ signal }) => ordersApi.list({ ...baseParams, ...range }, signal) })
-  const previousQuery = useQuery({ queryKey: ['orders', 'sales-previous', prior, branchId], queryFn: ({ signal }) => ordersApi.list({ ...baseParams, ...prior }, signal), enabled: Boolean(prior.from && prior.to) })
+  const baseParams = { branchId: branchId === 'all' ? undefined : branchId, limit: 100, sortBy: 'createdAt', sortOrder: 'desc' as const }
+  const currentQuery = useQuery({
+    queryKey: ['orders', 'sales', period, range, branchId],
+    queryFn: ({ signal }) => ordersApi.list({
+      ...baseParams,
+      period,
+      from: range.from,
+      to: range.to,
+      fromDate: period === 'custom' ? fromDate || undefined : undefined,
+      toDate: period === 'custom' ? toDate || undefined : undefined,
+    }, signal),
+    enabled: period !== 'custom' || Boolean(fromDate && toDate),
+  })
+  const previousQuery = useQuery({
+    queryKey: ['orders', 'sales-previous', prior, branchId],
+    queryFn: ({ signal }) => ordersApi.list({
+      ...baseParams,
+      period: 'custom',
+      from: prior.from,
+      to: prior.to,
+      fromDate: toLocalYmd(prior.from),
+      toDate: toLocalYmd(prior.to),
+    }, signal),
+    enabled: Boolean(prior.from && prior.to),
+  })
   const { data: branches = [] } = useQuery({ queryKey: ['branches'], queryFn: branchesApi.list })
-  const orders = currentQuery.data?.orders ?? []
+  const orders = useMemo(() => {
+    const rows = currentQuery.data?.orders ?? []
+    if (!range.from && !range.to) return rows
+    const fromMs = range.from ? new Date(range.from).getTime() : undefined
+    const toMs = range.to ? new Date(range.to).getTime() : undefined
+    return rows.filter((order) => {
+      const created = new Date(order.createdAt).getTime()
+      return (fromMs === undefined || created >= fromMs) && (toMs === undefined || created <= toMs)
+    })
+  }, [currentQuery.data?.orders, range.from, range.to])
+  const previousOrders = useMemo(() => {
+    const rows = previousQuery.data?.orders ?? []
+    if (!prior.from && !prior.to) return rows
+    const fromMs = prior.from ? new Date(prior.from).getTime() : undefined
+    const toMs = prior.to ? new Date(prior.to).getTime() : undefined
+    return rows.filter((order) => {
+      const created = new Date(order.createdAt).getTime()
+      return (fromMs === undefined || created >= fromMs) && (toMs === undefined || created <= toMs)
+    })
+  }, [previousQuery.data?.orders, prior.from, prior.to])
   const metrics = useMemo(() => aggregateSales(orders), [orders])
-  const previousMetrics = useMemo(() => aggregateSales(previousQuery.data?.orders ?? []), [previousQuery.data])
+  const previousMetrics = useMemo(() => aggregateSales(previousOrders), [previousOrders])
   const series = useMemo(() => salesSeries(orders), [orders])
   const byStatus = useMemo(() => { const counts = new Map<string, number>(); orders.forEach((order) => { const key = normalize(order.status) || 'unknown'; counts.set(key, (counts.get(key) ?? 0) + 1) }); return [...counts].map(([name, value]) => ({ name, value })) }, [orders])
   const byType = useMemo(() => groupRevenue(orders, (order) => order.type), [orders])
@@ -60,6 +100,11 @@ export default function AnalyticsPage() {
         <div><Label>Period</Label><Select value={period} onValueChange={(value) => setPeriod(value as DatePreset)}><SelectTrigger className="mt-1 w-[180px]" aria-label="Sales period"><SelectValue /></SelectTrigger><SelectContent>{[['today','Today'],['yesterday','Yesterday'],['last7','Last 7 days'],['last30','Last 30 days'],['month','This month'],['custom','Custom range']].map(([key,label]) => <SelectItem key={key} value={key}>{label}</SelectItem>)}</SelectContent></Select></div>
         {period === 'custom' && <><div><Label htmlFor="sales-from">From</Label><Input id="sales-from" className="mt-1" type="date" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} /></div><div><Label htmlFor="sales-to">To</Label><Input id="sales-to" className="mt-1" type="date" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} /></div></>}
         {(branches as Array<{ id: string; name: string }>).length > 1 && <div><Label>Branch</Label><Select value={branchId} onValueChange={setBranchId}><SelectTrigger className="mt-1 w-[200px]" aria-label="Sales branch"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All branches</SelectItem>{(branches as Array<{ id: string; name: string }>).map((branch) => <SelectItem key={branch.id} value={String(branch.id)}>{branch.name}</SelectItem>)}</SelectContent></Select></div>}
+        {(range.from || range.to) && (
+          <p className="w-full text-xs text-muted-foreground">
+            Showing {new Date(range.from!).toLocaleDateString('en-IN')} – {new Date(range.to!).toLocaleDateString('en-IN')}
+          </p>
+        )}
       </div>
 
       {currentQuery.isLoading ? <DashboardSkeleton /> : currentQuery.isError ? <State title="Sales data couldn’t be loaded" action={<Button variant="outline" onClick={refresh}>Try again</Button>} /> : orders.length === 0 ? <State title="No sales found for this period" action={<Button variant="outline" onClick={() => setPeriod('last30')}>Show last 30 days</Button>} /> : <>

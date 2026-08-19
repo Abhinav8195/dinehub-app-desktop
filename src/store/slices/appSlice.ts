@@ -19,8 +19,8 @@ interface AppState {
 const initialState: AppState = {
   sidebarCollapsed: true,
   darkMode: false,
-  selectedRestaurantId: '1',
-  selectedBranchId: '1',
+  selectedRestaurantId: '',
+  selectedBranchId: '',
   language: 'en',
   isOnline: true,
   printerConnected: true,

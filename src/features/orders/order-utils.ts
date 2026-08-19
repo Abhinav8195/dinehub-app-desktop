@@ -35,6 +35,18 @@ export function getDateRange(preset: DatePreset, now = new Date(), customFrom = 
   return { from: from.toISOString(), to: to.toISOString() }
 }
 
+/** Local calendar YYYY-MM-DD for API date filters (avoids UTC day shift). */
+export function toLocalYmd(value?: string | Date | null) {
+  if (!value) return undefined
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return undefined
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
 export function previousRange(from?: string, to?: string) {
   if (!from || !to) return { from: undefined, to: undefined }
   const start = new Date(from)

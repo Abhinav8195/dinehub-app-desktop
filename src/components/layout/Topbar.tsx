@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
 import { useQuery } from '@tanstack/react-query'
 import {
-  Bell, ChevronDown, Globe, Moon, Search, Sun, Wifi, WifiOff,
-  Printer, CircleDollarSign, Plus, Command, Lock, Clock, Radio
+  Bell, ChevronDown, Moon, Search, Sun,
+  Plus, Lock, Clock, Radio
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { getSocketConnectionState, onSocketConnectionState } from '@/lib/socket'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -18,8 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { Breadcrumb } from '@/components/common/Breadcrumb'
 import { AppUpdateButton } from '@/components/common/AppUpdateButton'
-import { LANGUAGES } from '@/constants/navigation'
-import { setRestaurant, setBranch, setLanguage, toggleDarkMode, setCommandPaletteOpen } from '@/store/slices/appSlice'
+import { setRestaurant, setBranch, toggleDarkMode } from '@/store/slices/appSlice'
 import { useAuth } from '@/hooks/useAuth'
 import { useShiftStore } from '@/store/shiftStore'
 import { APP_BASE } from '@/constants/navigation'
@@ -36,10 +36,7 @@ interface TopbarProps {
 export function Topbar({ onCloseShift }: TopbarProps) {
   const navigate = useNavigate()
   const dispatch = useDispatch()
-  const {
-    darkMode, selectedRestaurantId, selectedBranchId, language,
-    isOnline, printerConnected, cashRegisterOpen
-  } = useSelector((s: RootState) => s.app)
+  const { darkMode, selectedRestaurantId, selectedBranchId } = useSelector((s: RootState) => s.app)
   const { user, logout } = useAuth()
   const currentShift = useShiftStore((s) => s.currentShift)
   const lockScreen = useShiftStore((s) => s.lockScreen)
@@ -53,12 +50,33 @@ export function Topbar({ onCloseShift }: TopbarProps) {
   })
   const { data: branches = [] } = useQuery({ queryKey: ['branches'], queryFn: branchesApi.list })
   const restaurants = tenantsResult?.data ?? []
+  const branchList = branches as Array<{ id: string; name: string; isDefault?: boolean }>
   const [socketState, setSocketState] = useState(getSocketConnectionState())
   useEffect(() => onSocketConnectionState(setSocketState), [])
   useEffect(() => {
     if (isSuperAdmin && !selectedRestaurantId && restaurants[0]) dispatch(setRestaurant(restaurants[0].id))
-    if (!selectedBranchId && branches[0]) dispatch(setBranch(String(branches[0].id)))
-  }, [branches, dispatch, isSuperAdmin, restaurants, selectedBranchId, selectedRestaurantId])
+    const selectedStillValid = Boolean(selectedBranchId && branchList.some((b) => String(b.id) === selectedBranchId))
+    if (!selectedStillValid && branchList.length) {
+      const preferred = branchList.find((b) => b.isDefault) ?? branchList[0]
+      dispatch(setBranch(String(preferred.id)))
+    }
+  }, [branchList, dispatch, isSuperAdmin, restaurants, selectedBranchId, selectedRestaurantId])
+
+  const handleLock = async () => {
+    if (!user?.hasPin) {
+      toast.error('Set a PIN in Account Settings before locking the screen')
+      navigate(`${APP_BASE}/account?tab=security`)
+      return
+    }
+    try {
+      await lockScreen()
+      toast.success('Screen locked')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to lock screen')
+    }
+  }
+
+  const selectedBranch = branchList.find((b) => String(b.id) === selectedBranchId)
 
   return (
     <TooltipProvider>
@@ -68,16 +86,7 @@ export function Topbar({ onCloseShift }: TopbarProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Status indicators */}
           <div className="hidden lg:flex items-center gap-1.5 mr-2">
-            <Tooltip>
-              <TooltipTrigger>
-                <div className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${isOnline ? 'text-success' : 'text-danger'}`}>
-                  {isOnline ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>{isOnline ? 'Online' : 'Offline Mode'}</TooltipContent>
-            </Tooltip>
             <Tooltip>
               <TooltipTrigger>
                 <div className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${socketState === 'connected' ? 'text-success' : socketState === 'connecting' ? 'text-warning' : 'text-muted-foreground'}`}>
@@ -88,70 +97,55 @@ export function Topbar({ onCloseShift }: TopbarProps) {
                 {socketState === 'connected' ? 'Realtime connected' : socketState === 'connecting' ? 'Realtime connecting…' : 'Realtime disconnected'}
               </TooltipContent>
             </Tooltip>
-            <Tooltip>
-              <TooltipTrigger>
-                <div className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${printerConnected ? 'text-success' : 'text-danger'}`}>
-                  <Printer className="h-3.5 w-3.5" />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>{printerConnected ? 'Printer Connected' : 'Printer Offline'}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger>
-                <div className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${cashRegisterOpen ? 'text-success' : 'text-warning'}`}>
-                  <CircleDollarSign className="h-3.5 w-3.5" />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>{cashRegisterOpen ? 'Register Open' : 'Register Closed'}</TooltipContent>
-            </Tooltip>
           </div>
 
-          {/* Restaurant selector */}
           {isSuperAdmin ? (
-            <Select value={selectedRestaurantId} onValueChange={(v) => dispatch(setRestaurant(v))}>
-              <SelectTrigger className="w-[160px] h-9 hidden xl:flex">
-                <SelectValue placeholder="Restaurant" />
-              </SelectTrigger>
-              <SelectContent>
-                {restaurants.map((r) => (
-                  <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="hidden xl:flex flex-col gap-0.5">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground px-1">Restaurant</span>
+              <Select value={selectedRestaurantId} onValueChange={(v) => dispatch(setRestaurant(v))}>
+                <SelectTrigger className="w-[180px] h-9">
+                  <SelectValue placeholder="Select restaurant" />
+                </SelectTrigger>
+                <SelectContent>
+                  {restaurants.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           ) : (
             <Badge variant="secondary" className="hidden xl:flex h-9 px-3">
               {user?.tenant?.name ?? 'Current restaurant'}
             </Badge>
           )}
 
+          <div className="hidden xl:flex flex-col gap-0.5">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground px-1">Branch</span>
+            {branchList.length === 0 ? (
+              <Badge variant="outline" className="h-9 px-3 font-normal text-muted-foreground">No branch yet</Badge>
+            ) : (
+              <Select
+                value={selectedBranch ? String(selectedBranch.id) : undefined}
+                onValueChange={(v) => dispatch(setBranch(v))}
+              >
+                <SelectTrigger className="w-[180px] h-9" aria-label="Select branch">
+                  <SelectValue placeholder="Select branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branchList.map((b) => (
+                    <SelectItem key={b.id} value={String(b.id)}>
+                      {b.name}{b.isDefault ? ' (Default)' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
 
-
-
-          {/* Branch selector */}
-          <Select value={selectedBranchId} onValueChange={(v) => dispatch(setBranch(v))}>
-            <SelectTrigger className="w-[140px] h-9 hidden xl:flex">
-              <SelectValue placeholder="Branch" />
-            </SelectTrigger>
-            <SelectContent>
-              {(branches as Array<{ id: string; name: string }>).map((b) => (
-                <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-
-
-          {/* Shift status — close only when shift is open */}
           {currentShift && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="hidden md:flex gap-1.5"
-                  onClick={() => onCloseShift?.()}
-                >
+                <Button type="button" variant="outline" size="sm" className="hidden md:flex gap-1.5" onClick={() => onCloseShift?.()}>
                   <Clock className="h-3.5 w-3.5" />
                   Close Shift
                 </Button>
@@ -162,20 +156,17 @@ export function Topbar({ onCloseShift }: TopbarProps) {
             </Tooltip>
           )}
 
-          {/* App updates */}
           <AppUpdateButton />
 
-          {/* Lock screen */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button type="button" variant="ghost" size="icon" className="h-9 w-9" onClick={() => lockScreen().catch(() => {})}>
+              <Button type="button" variant="ghost" size="icon" className="h-9 w-9" onClick={() => void handleLock()}>
                 <Lock className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Lock Screen</TooltipContent>
+            <TooltipContent>{user?.hasPin ? 'Lock Screen' : 'Set a PIN first to lock'}</TooltipContent>
           </Tooltip>
 
-          {/* Quick action */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="sm" className="gap-1">
@@ -190,29 +181,14 @@ export function Topbar({ onCloseShift }: TopbarProps) {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Language */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-9">
-                <Globe className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {LANGUAGES.map((lang) => (
-                <DropdownMenuItem key={lang.code} onClick={() => dispatch(setLanguage(lang.code))}>
-                  <span className="mr-2">{lang.flag}</span> {lang.label}
-                  {language === lang.code && <Badge variant="secondary" className="ml-auto text-[10px]">Active</Badge>}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Badge variant="outline" className="hidden sm:flex h-9 gap-1.5 px-3 text-xs font-medium">
+            English
+          </Badge>
 
-          {/* Dark mode */}
           <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => dispatch(toggleDarkMode())}>
             {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
 
-          {/* Notifications */}
           <Button variant="ghost" size="icon" className="h-9 w-9 relative" onClick={() => navigate(`${APP_BASE}/notifications`)}>
             <Bell className="h-4 w-4" />
             {unreadCount > 0 && (
@@ -222,7 +198,6 @@ export function Topbar({ onCloseShift }: TopbarProps) {
             )}
           </Button>
 
-          {/* Profile */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-2 rounded-xl p-1.5 hover:bg-accent transition-colors">

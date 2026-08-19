@@ -35,6 +35,8 @@ export interface MenuItem {
   imageUrl: string | null
   available: boolean
   popular: boolean
+  isVegetarian?: boolean | null
+  dietary?: 'veg' | 'nonveg' | null
   modifierGroups: ModifierGroup[]
   hasVariants?: boolean
   variants?: MenuItemVariant[]
@@ -68,6 +70,7 @@ export interface CreateMenuItemBody {
   imageUrl?: string
   isAvailable?: boolean
   isPopular?: boolean
+  isVegetarian?: boolean | null
   hasVariants?: boolean
   variants?: MenuItemVariantInput[]
 }
@@ -80,6 +83,7 @@ export interface UpdateMenuItemBody {
   imageUrl?: string
   isAvailable?: boolean
   isPopular?: boolean
+  isVegetarian?: boolean | null
   hasVariants?: boolean
   variants?: MenuItemVariantInput[]
 }

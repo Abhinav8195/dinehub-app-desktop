@@ -24,6 +24,9 @@ type BackendUser = {
   createdAt?: string
   roles: string[]
   permissions: string[]
+  hasPin?: boolean
+  employeeCode?: string | null
+  staffLoginId?: string | null
   tenant?: { id: string; name: string; slug: string; status: string } | null
   featureFlags?: Array<{ key: string; enabled: boolean; config?: unknown }>
 }
@@ -63,6 +66,9 @@ export function mapUser(raw: BackendUser): AuthUser {
     permissions: raw.permissions ?? [],
     tenantId: raw.tenantId ?? undefined,
     tenant: raw.tenant ?? null,
+    hasPin: Boolean(raw.hasPin),
+    employeeCode: raw.employeeCode ?? undefined,
+    staffLoginId: raw.staffLoginId ?? undefined,
     featureFlags: raw.featureFlags
   }
 }

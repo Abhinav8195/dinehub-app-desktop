@@ -30,13 +30,14 @@ interface ItemForm {
   imageUrl: string
   isAvailable: boolean
   isPopular: boolean
+  isVegetarian: boolean | null
   hasVariants: boolean
   variants: VariantDraft[]
 }
 
 const emptyItem = (categoryId = ''): ItemForm => ({
   categoryId, name: '', description: '', price: '0', imageUrl: '',
-  isAvailable: true, isPopular: false, hasVariants: false, variants: []
+  isAvailable: true, isPopular: false, isVegetarian: null, hasVariants: false, variants: []
 })
 
 function errorMessage(error: unknown): string {
@@ -106,6 +107,7 @@ export default function MenuPage() {
       imageUrl: item.imageUrl ?? '',
       isAvailable: item.available,
       isPopular: item.popular,
+      isVegetarian: item.isVegetarian ?? (item.dietary === 'veg' ? true : item.dietary === 'nonveg' ? false : null),
       hasVariants: item.hasVariants ?? Boolean(item.variants?.length),
       variants: (item.variants ?? []).map((variant) => ({
         id: variant.id, name: variant.name, price: String(variant.price),
@@ -143,6 +145,7 @@ export default function MenuPage() {
       imageUrl: itemForm.imageUrl.trim() || undefined,
       isAvailable: itemForm.isAvailable,
       isPopular: itemForm.isPopular,
+      isVegetarian: itemForm.isVegetarian,
       hasVariants: itemForm.hasVariants,
       ...(editingItem || !itemForm.hasVariants ? {} : { variants: variantPayload }),
     }
@@ -308,6 +311,8 @@ export default function MenuPage() {
                           {item.imageUrl ? <img src={resolveMenuImageUrl(item.imageUrl) ?? ''} alt="" className="h-full w-full object-cover" /> : <Image className="h-10 w-10 text-muted-foreground/40" />}
                           <input type="checkbox" aria-label={`Select ${item.name}`} checked={selectedIds.has(item.id)} onChange={() => toggleSelected(item.id)} className="absolute left-3 top-3 h-4 w-4 accent-primary" />
                           {item.popular && <Badge className="absolute right-3 top-3" variant="warning"><Star className="mr-1 h-3 w-3" /> Popular</Badge>}
+                          {(item.isVegetarian === true || item.dietary === 'veg') && <Badge className="absolute left-3 bottom-3 bg-emerald-600 text-white">Veg</Badge>}
+                          {(item.isVegetarian === false || item.dietary === 'nonveg') && <Badge className="absolute left-3 bottom-3 bg-rose-700 text-white">Non-veg</Badge>}
                         </div>
                         <CardContent className="p-4">
                           <div className="flex justify-between gap-3"><div className="min-w-0"><p className="truncate font-semibold">{item.name}</p><p className="text-xs text-muted-foreground">{item.category}</p></div><p className="text-right font-bold text-primary">{item.hasVariants && item.variants?.some((variant) => variant.isAvailable) ? <><span className="block text-[10px] font-normal text-muted-foreground">Starting from</span>{formatCurrency(Math.min(...item.variants.filter((variant) => variant.isAvailable).map(effectiveVariantPrice)))}</> : formatCurrency(item.price)}</p></div>
@@ -352,6 +357,36 @@ export default function MenuPage() {
               />
               <label className="flex items-center justify-between"><span>Available</span><Switch checked={itemForm.isAvailable} onCheckedChange={(isAvailable) => setItemForm((form) => ({ ...form, isAvailable }))} /></label>
               <label className="flex items-center justify-between"><span>Popular</span><Switch checked={itemForm.isPopular} onCheckedChange={(isPopular) => setItemForm((form) => ({ ...form, isPopular }))} /></label>
+              <div>
+                <Label>Dietary type</Label>
+                <div className="mt-1.5 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setItemForm((form) => ({ ...form, isVegetarian: true }))}
+                    className={`flex items-center justify-center gap-2 rounded-lg border-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+                      itemForm.isVegetarian === true
+                        ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
+                        : 'border-emerald-600/40 bg-transparent text-emerald-700 hover:bg-emerald-600/10 dark:text-emerald-400'
+                    }`}
+                  >
+                    <span className={`h-3 w-3 rounded-sm border-2 ${itemForm.isVegetarian === true ? 'border-white bg-white' : 'border-emerald-600 bg-emerald-600'}`} />
+                    Veg
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setItemForm((form) => ({ ...form, isVegetarian: false }))}
+                    className={`flex items-center justify-center gap-2 rounded-lg border-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+                      itemForm.isVegetarian === false
+                        ? 'border-rose-600 bg-rose-600 text-white shadow-sm'
+                        : 'border-rose-600/40 bg-transparent text-rose-700 hover:bg-rose-600/10 dark:text-rose-400'
+                    }`}
+                  >
+                    <span className={`h-3 w-3 rounded-sm border-2 ${itemForm.isVegetarian === false ? 'border-white bg-white' : 'border-rose-600 bg-rose-600'}`} />
+                    Non-veg
+                  </button>
+                </div>
+                <p className="mt-1.5 text-xs text-muted-foreground">Green = vegetarian · Red = non-vegetarian</p>
+              </div>
             </div>
             <DialogFooter><Button variant="outline" onClick={() => setItemDialog(false)} disabled={itemImageUploading}>Cancel</Button><Button onClick={saveItem} disabled={itemImageUploading || menu.createItem.isPending || menu.updateItem.isPending}>{(itemImageUploading || menu.createItem.isPending || menu.updateItem.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save</Button></DialogFooter>
           </DialogContent>
@@ -376,7 +411,7 @@ export default function MenuPage() {
         </Dialog>
 
         <Dialog open={Boolean(detail)} onOpenChange={(open) => !open && setDetail(null)}>
-          <DialogContent>{detail && <><DialogHeader><DialogTitle>{detail.name}</DialogTitle><DialogDescription>{detail.category}{!detail.hasVariants && ` · ${formatCurrency(detail.price)}`}</DialogDescription></DialogHeader><p className="text-sm">{detail.description || 'No description.'}</p>{detail.hasVariants && <div className="space-y-2">{detail.variants?.map((variant) => <div key={variant.id} className="flex justify-between rounded-lg border p-2 text-sm"><span>{variant.name}{variant.isDefault ? ' · Default' : ''}</span><span>{formatCurrency(effectiveVariantPrice(variant))}</span></div>)}</div>}<div className="flex gap-2"><Badge variant={detail.available ? 'success' : 'secondary'}>{detail.available ? 'Available' : 'Unavailable'}</Badge>{detail.popular && <Badge variant="warning">Popular</Badge>}</div></>}</DialogContent>
+          <DialogContent>{detail && <><DialogHeader><DialogTitle>{detail.name}</DialogTitle><DialogDescription>{detail.category}{!detail.hasVariants && ` · ${formatCurrency(detail.price)}`}</DialogDescription></DialogHeader><p className="text-sm">{detail.description || 'No description.'}</p>{detail.hasVariants && <div className="space-y-2">{detail.variants?.map((variant) => <div key={variant.id} className="flex justify-between rounded-lg border p-2 text-sm"><span>{variant.name}{variant.isDefault ? ' · Default' : ''}</span><span>{formatCurrency(effectiveVariantPrice(variant))}</span></div>)}</div>}<div className="flex flex-wrap gap-2"><Badge variant={detail.available ? 'success' : 'secondary'}>{detail.available ? 'Available' : 'Unavailable'}</Badge>{detail.popular && <Badge variant="warning">Popular</Badge>}{(detail.isVegetarian === true || detail.dietary === 'veg') && <Badge className="bg-emerald-600 text-white">Vegetarian</Badge>}{(detail.isVegetarian === false || detail.dietary === 'nonveg') && <Badge className="bg-rose-700 text-white">Non-vegetarian</Badge>}</div></>}</DialogContent>
         </Dialog>
 
         <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>

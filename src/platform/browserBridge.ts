@@ -82,6 +82,66 @@ const MENU_UPLOAD: Record<string, string> = {
   combo: '/combos/upload-image',
 }
 
+const SOCKET_URL = (import.meta.env.VITE_SOCKET_URL || new URL(API_BASE).origin).replace(/\/$/, '')
+const FORWARDED_EVENTS = [
+  'new_order', 'order_updated', 'order_status_updated', 'new_kitchen_order',
+  'kitchen_order_updated', 'table_updated', 'table_status_updated',
+  'waiter_call_alert', 'waiter.requested', 'waiter.acknowledged',
+  'waiter.completed', 'waiter.cancelled', 'qr-order.created',
+  'low_stock_alert', 'notification',
+] as const
+
+type StateListener = (state: 'connected' | 'disconnected' | 'connecting') => void
+type EventListener = (event: string, payload: unknown) => void
+
+let webSocket: import('socket.io-client').Socket | null = null
+const stateListeners = new Set<StateListener>()
+const eventListeners = new Set<EventListener>()
+
+function emitState(state: 'connected' | 'disconnected' | 'connecting') {
+  stateListeners.forEach((listener) => listener(state))
+}
+
+async function connectWebRealtime() {
+  if (webSocket?.connected) {
+    emitState('connected')
+    return
+  }
+  const token = sessionStorage.getItem(ACCESS)
+  if (!token) throw new Error('An authenticated session is required')
+  emitState('connecting')
+  const { io } = await import('socket.io-client')
+  if (webSocket) {
+    webSocket.removeAllListeners()
+    webSocket.disconnect()
+  }
+  webSocket = io(SOCKET_URL, {
+    auth: { token },
+    transports: ['websocket'],
+    reconnection: true,
+    reconnectionAttempts: 10,
+    reconnectionDelay: 2000,
+  })
+  webSocket.on('connect', () => {
+    emitState('connected')
+    webSocket?.emit('join_tenant')
+  })
+  webSocket.on('disconnect', () => emitState('disconnected'))
+  webSocket.on('connect_error', () => emitState('disconnected'))
+  FORWARDED_EVENTS.forEach((event) => {
+    webSocket?.on(event, (payload) => {
+      eventListeners.forEach((listener) => listener(event, payload))
+    })
+  })
+}
+
+function disconnectWebRealtime() {
+  webSocket?.removeAllListeners()
+  webSocket?.disconnect()
+  webSocket = null
+  emitState('disconnected')
+}
+
 function pickImageFile(kind: 'category' | 'item' | 'combo'): Promise<{
   name: string
   mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
@@ -166,7 +226,19 @@ export function installBrowserBridge() {
     saveFile: async ({ filename, content }: any) => download(filename, content, 'text/plain'),
     saveBytes: async ({ filename, bytes, contentType }: any) => download(filename, bytes, contentType),
     updates: { getStatus: async () => ({ state: 'idle' }), check: async () => ({ state: 'idle' }), install: async () => false, onStatus: noopUnsubscribe },
-    realtime: { connect: async () => undefined, disconnect: async () => undefined, onState: noopUnsubscribe, onEvent: noopUnsubscribe },
+    realtime: {
+      connect: () => connectWebRealtime(),
+      disconnect: async () => { disconnectWebRealtime() },
+      onState: (callback: StateListener) => {
+        stateListeners.add(callback)
+        callback(webSocket?.connected ? 'connected' : 'disconnected')
+        return () => { stateListeners.delete(callback) }
+      },
+      onEvent: (callback: EventListener) => {
+        eventListeners.add(callback)
+        return () => { eventListeners.delete(callback) }
+      },
+    },
     notify: { show: async (title: string, body: string) => { if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body }) } },
     menuImages: {
       select: (kind: 'category' | 'item' | 'combo' = 'item') => pickImageFile(kind),

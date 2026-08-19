@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { authApi } from '@/api/auth.api'
-import { ApiError } from '@/api/types/common'
+import { formatApiError } from '@/api/management-utils'
 import { formatDateTime } from '@/lib/utils'
 
 export default function SessionsPage() {
@@ -24,13 +24,13 @@ export default function SessionsPage() {
       toast.success('Session revoked')
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Failed to revoke session')
+    onError: (err) => toast.error(formatApiError(err, 'Could not revoke session'))
   })
 
   return (
     <PageShell isLoading={isLoading} isError={isError} onRetry={() => refetch()}>
       <div className="page-container">
-        <PageHeader title="Active Sessions" description="Manage your logged-in devices and sessions" />
+        <PageHeader title="Active Sessions" description="Devices where you are signed in" />
 
         <div className="space-y-3">
           {(sessions ?? []).filter((s) => !s.status || s.status === 'ACTIVE').map((session) => (
@@ -41,11 +41,11 @@ export default function SessionsPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="font-medium">{session.deviceName}</p>
+                    <p className="font-medium">{session.deviceName || 'Unknown device'}</p>
                     {session.isCurrent && <Badge variant="success">Current</Badge>}
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {session.ipAddress} · Last active {formatDateTime(session.lastActiveAt)}
+                    Last active {formatDateTime(session.lastActiveAt)}
                   </p>
                 </div>
                 {!session.isCurrent && (

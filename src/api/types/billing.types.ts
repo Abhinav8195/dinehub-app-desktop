@@ -21,6 +21,12 @@ export interface TenantSubscription {
   status: string
   amount?: number
   currency?: string
+  billingCycle?: string
+  startsAt?: string | null
+  endsAt?: string | null
+  trialEndsAt?: string | null
+  cancelledAt?: string | null
+  autoRenew?: boolean
   plan?: SubscriptionPlan | null
   invoices?: Array<{
     id: string

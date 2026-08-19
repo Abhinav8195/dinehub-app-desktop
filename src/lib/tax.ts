@@ -47,7 +47,7 @@ function round2(n: number) {
 export const DEFAULT_TAX_SETTINGS: TaxSettings = {
   id: 'local',
   tenantId: 'local',
-  gstPercent: 5,
+  gstPercent: 0,
   sgstPercent: 2.5,
   cgstPercent: 2.5,
   serviceChargePercent: 0,

@@ -15,9 +15,26 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { formatCurrency } from '@/lib/utils'
+import { formatApiError } from '@/api/management-utils'
 import { purchasesApi, vendorsApi } from '@/api/phase1.api'
 
 type PurchaseRow = { id: string; po: string; vendor: string; items: number; total: number; status: string; date: string }
+
+function downloadCsv(filename: string, rows: PurchaseRow[]) {
+  const header = ['PO Number', 'Vendor', 'Items', 'Total', 'Status', 'Date']
+  const lines = rows.map((row) =>
+    [row.po, row.vendor, row.items, row.total, row.status, row.date]
+      .map((value) => `"${String(value ?? '').replaceAll('"', '""')}"`)
+      .join(',')
+  )
+  const blob = new Blob([[header.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
 
 export default function PurchasePage() {
   const [tab, setTab] = useState('orders')
@@ -44,7 +61,7 @@ export default function PurchasePage() {
       setDialog(null)
       setForm({ vendorId: '', number: '', itemName: '', quantity: 1, unitPrice: 0, total: 0, reason: '' })
     },
-    onError: (error: Error) => toast.error(error.message || 'Unable to save purchase record'),
+    onError: (error) => toast.error(formatApiError(error, 'Could not save purchase record')),
   })
   const rows = useMemo<PurchaseRow[]>(() => {
     if (tab === 'vendors') return (vendors as Array<{ id: string; name: string; createdAt?: string }>).map((vendor) => ({ id: vendor.id, po: '—', vendor: vendor.name, items: 0, total: 0, status: 'active', date: vendor.createdAt ?? '' }))
@@ -68,7 +85,19 @@ export default function PurchasePage() {
       <div className="page-container">
         <PageHeader title="Purchase Orders" description="Manage vendors, purchase orders, and goods receiving" actions={
           <>
-            <Button variant="outline"><Download className="h-4 w-4 mr-2" /> Export</Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (!rows.length) {
+                  toast.error('Nothing to export on this tab yet')
+                  return
+                }
+                downloadCsv(`dinehub-purchases-${tab}-${new Date().toISOString().slice(0, 10)}.csv`, rows)
+                toast.success('Export downloaded')
+              }}
+            >
+              <Download className="h-4 w-4 mr-2" /> Export
+            </Button>
             <Button onClick={() => setDialog(tab === 'vendors' ? 'vendor' : tab === 'receive' ? 'receipt' : tab === 'returns' ? 'return' : 'po')}><Plus className="h-4 w-4 mr-2" /> {tab === 'vendors' ? 'New Vendor' : tab === 'receive' ? 'New Receipt' : tab === 'returns' ? 'New Return' : 'New PO'}</Button>
           </>
         } />

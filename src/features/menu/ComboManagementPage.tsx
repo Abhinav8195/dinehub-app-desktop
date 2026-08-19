@@ -99,9 +99,17 @@ export default function ComboManagementPage() {
         <div className="grid grid-cols-2 gap-3"><div><Label>Fixed price</Label><Input type="number" min="0" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} /></div><label className="mt-7 flex justify-between">Active <Switch checked={form.isActive} onCheckedChange={(isActive) => setForm({ ...form, isActive })} /></label></div>
         <ImageUploadField kind="combo" value={form.imageUrl} onUploaded={(imageUrl) => setForm({ ...form, imageUrl })} onUploadingChange={setUploading} />
         <div><Label>Menu items *</Label><Input className="my-2" placeholder="Search menu items…" value={search} onChange={(e) => setSearch(e.target.value)} />
-          <div className="max-h-56 space-y-2 overflow-y-auto">{visibleItems.map((item) => {
+          <div className="max-h-56 space-y-2 overflow-y-auto">
+            {items.isLoading && <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}
+            {items.isError && <div className="rounded border border-danger/30 bg-danger/5 p-3 text-center text-sm text-danger">Could not load menu items. <button type="button" className="underline" onClick={() => items.refetch()}>Retry</button></div>}
+            {!items.isLoading && !items.isError && !visibleItems.length && (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {(items.data?.length ?? 0) === 0 ? 'No menu items found. Create items in Menu first.' : 'No items match your search.'}
+              </p>
+            )}
+            {visibleItems.map((item) => {
             const selected = form.items.find((entry) => entry.menuItemId === item.id)
-            return <div key={item.id} className="flex items-center gap-3 rounded border p-2"><input type="checkbox" checked={Boolean(selected)} onChange={() => toggleItem(item.id)} /><span className="mr-auto text-sm">{item.name}</span>{selected && <><Label className="text-xs">Qty</Label><Input className="w-20" type="number" min="1" value={selected.quantity} onChange={(e) => setForm({ ...form, items: form.items.map((entry) => entry.menuItemId === item.id ? { ...entry, quantity: Math.max(1, Number(e.target.value)) } : entry) })} /></>}</div>
+            return <div key={item.id} className="flex items-center gap-3 rounded border p-2"><input type="checkbox" className="h-4 w-4 accent-primary" checked={Boolean(selected)} onChange={() => toggleItem(item.id)} /><span className="mr-auto text-sm">{item.name}</span>{selected && <><Label className="text-xs">Qty</Label><Input className="w-20" type="number" min="1" value={selected.quantity} onChange={(e) => setForm({ ...form, items: form.items.map((entry) => entry.menuItemId === item.id ? { ...entry, quantity: Math.max(1, Number(e.target.value)) } : entry) })} /></>}</div>
           })}</div>
         </div>
       </div><DialogFooter><Button variant="outline" onClick={() => setDialog(false)} disabled={uploading}>Cancel</Button><Button onClick={save} disabled={uploading || mutation.isPending}>{mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save</Button></DialogFooter>

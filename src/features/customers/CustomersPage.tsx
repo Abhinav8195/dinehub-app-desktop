@@ -20,6 +20,7 @@ import { Label } from '@/components/ui/label'
 import { customersApi } from '@/api/customers.api'
 import type { PosCustomer } from '@/api/types/pos.types'
 import { formatCurrency, getInitials } from '@/lib/utils'
+import { formatApiError } from '@/api/management-utils'
 
 export default function CustomersPage() {
   const queryClient = useQueryClient()
@@ -35,7 +36,16 @@ export default function CustomersPage() {
   })
 
   const createMutation = useMutation({
-    mutationFn: () => customersApi.create({ firstName, lastName, email, phone }),
+    mutationFn: () => {
+      const trimmedPhone = phone.replace(/[\s()-]/g, '').trim()
+      if (trimmedPhone.length < 5) throw new Error('Phone number looks too short. Enter at least 5 digits.')
+      return customersApi.create({
+        firstName: firstName.trim(),
+        lastName: lastName.trim() || undefined,
+        email: email.trim() || undefined,
+        phone: trimmedPhone,
+      })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
       toast.success('Customer saved')
@@ -45,7 +55,7 @@ export default function CustomersPage() {
       setEmail('')
       setPhone('')
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to save customer'),
+    onError: (err) => toast.error(formatApiError(err, 'Could not save customer. Check name and phone.')),
   })
 
   const columns = useMemo<ColumnDef<PosCustomer>[]>(() => [
@@ -96,8 +106,8 @@ export default function CustomersPage() {
                 <div className="space-y-2"><Label>First Name *</Label><Input value={firstName} onChange={(e) => setFirstName(e.target.value)} /></div>
                 <div className="space-y-2"><Label>Last Name</Label><Input value={lastName} onChange={(e) => setLastName(e.target.value)} /></div>
               </div>
-              <div className="space-y-2"><Label>Phone *</Label><Input value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
-              <div className="space-y-2"><Label>Email</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
+              <div className="space-y-2"><Label>Phone * (min 5 digits)</Label><Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98765 43210" /></div>
+              <div className="space-y-2"><Label>Email (optional)</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Leave blank if not available" /></div>
               <Button className="w-full" disabled={createMutation.isPending || !firstName || !phone}
                 onClick={() => createMutation.mutate()}>
                 {createMutation.isPending ? 'Saving...' : 'Save Customer'}

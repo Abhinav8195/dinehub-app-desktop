@@ -11,10 +11,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { tablesApi } from '@/api/tables.api'
+import { formatApiError } from '@/api/management-utils'
 import type { CreateTableRequest, TableDto } from '@/api/types/pos.types'
 import { BRAND } from '@/constants/brand'
 import { cn, formatCurrency, formatRelativeTime } from '@/lib/utils'
@@ -27,6 +28,9 @@ const statusColors: Record<string, string> = {
 }
 
 const STATUS_OPTIONS = ['available', 'occupied', 'reserved', 'cleaning'] as const
+
+/** Common Indian multi-floor restaurant layout (Ambala-style). */
+const STANDARD_FLOORS = ['Ground Floor', '1st Floor', '2nd Floor', '3rd Floor', 'Rooftop', 'Basement'] as const
 
 type TableForm = {
   number: string
@@ -44,11 +48,17 @@ const defaultForm = (floor: string): TableForm => ({
 
 export default function TablesPage() {
   const queryClient = useQueryClient()
-  const [floor, setFloor] = useState('Ground')
+  const [floor, setFloor] = useState('Ground Floor')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [mergeOpen, setMergeOpen] = useState(false)
+  const [transferOpen, setTransferOpen] = useState(false)
   const [selectedTable, setSelectedTable] = useState<TableDto | null>(null)
-  const [form, setForm] = useState<TableForm>(() => defaultForm('Ground'))
+  const [form, setForm] = useState<TableForm>(() => defaultForm('Ground Floor'))
+  const [mergeSourceId, setMergeSourceId] = useState('')
+  const [mergeTargetId, setMergeTargetId] = useState('')
+  const [transferSourceId, setTransferSourceId] = useState('')
+  const [transferTargetId, setTransferTargetId] = useState('')
 
   const { data: tables = [], isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['tables'],
@@ -56,7 +66,10 @@ export default function TablesPage() {
     refetchInterval: 10_000,
   })
 
-  const floors = useMemo(() => [...new Set(tables.map((t) => t.floor))], [tables])
+  const floors = useMemo(() => {
+    const fromTables = tables.map((t) => t.floor).filter(Boolean)
+    return [...new Set([...STANDARD_FLOORS, ...fromTables])]
+  }, [tables])
 
   const floorTables = useMemo(
     () => tables.filter((t) => t.floor === floor),
@@ -69,6 +82,9 @@ export default function TablesPage() {
     reserved: tables.filter((t) => t.status === 'reserved').length,
     cleaning: tables.filter((t) => t.status === 'cleaning').length,
   }), [tables])
+
+  const occupiedTables = useMemo(() => tables.filter((t) => t.currentOrder || t.status === 'occupied'), [tables])
+  const availableTargets = useMemo(() => tables.filter((t) => t.status === 'available' || !t.currentOrder), [tables])
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -84,7 +100,7 @@ export default function TablesPage() {
       setDialogOpen(false)
       toast.success(`Table T${table.number} added to ${table.floor}`)
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to add table'),
+    onError: (err) => toast.error(formatApiError(err, 'Could not add table')),
   })
 
   const statusMutation = useMutation({
@@ -95,32 +111,26 @@ export default function TablesPage() {
       setSelectedTable(table)
       toast.success(`Table T${table.number} is now ${table.status}`)
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update status'),
+    onError: (err) => toast.error(formatApiError(err, 'Could not update table status')),
   })
   const transferMutation = useMutation({
     mutationFn: ({ id, targetTableId }: { id: string; targetTableId: string }) => tablesApi.transfer(id, { targetTableId }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['tables'] }); toast.success('Table order transferred') },
-    onError: (err: Error) => toast.error(err.message || 'Failed to transfer table'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tables'] })
+      setTransferOpen(false)
+      toast.success('Order moved to the selected table')
+    },
+    onError: (err) => toast.error(formatApiError(err, 'Could not transfer table')),
   })
   const mergeMutation = useMutation({
     mutationFn: (body: { sourceTableIds: string[]; targetTableId: string }) => tablesApi.merge(body),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['tables'] }); toast.success('Tables merged') },
-    onError: (err: Error) => toast.error(err.message || 'Failed to merge tables'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tables'] })
+      setMergeOpen(false)
+      toast.success('Tables merged successfully')
+    },
+    onError: (err) => toast.error(formatApiError(err, 'Could not merge tables')),
   })
-  const chooseTable = (message: string) => {
-    const number = window.prompt(message)
-    return tables.find((table) => String(table.number) === number)
-  }
-  const handleTransfer = () => {
-    const source = chooseTable('Source table number')
-    const target = chooseTable('Target table number')
-    if (source && target && source.id !== target.id) transferMutation.mutate({ id: source.id, targetTableId: target.id })
-  }
-  const handleMerge = () => {
-    const source = chooseTable('Source table number')
-    const target = chooseTable('Target table number')
-    if (source && target && source.id !== target.id) mergeMutation.mutate({ sourceTableIds: [source.id], targetTableId: target.id })
-  }
 
   const openAddDialog = () => {
     const nextNumber =
@@ -132,7 +142,7 @@ export default function TablesPage() {
   const handleAddTable = () => {
     const number = Number(form.number)
     const capacity = Number(form.capacity)
-    if (!form.floor.trim()) { toast.error('Floor is required'); return }
+    if (!form.floor.trim()) { toast.error('Please select a floor'); return }
     if (!Number.isInteger(number) || number < 1) { toast.error('Enter a valid table number'); return }
     if (!Number.isInteger(capacity) || capacity < 1) { toast.error('Capacity must be at least 1'); return }
     createMutation.mutate()
@@ -155,27 +165,41 @@ export default function TablesPage() {
     toast.success(`QR link copied for Table T${table.number}`)
   }
 
+  const openMerge = () => {
+    setMergeSourceId(selectedTable?.id || occupiedTables[0]?.id || '')
+    setMergeTargetId('')
+    setMergeOpen(true)
+  }
+
+  const openTransfer = () => {
+    setTransferSourceId(selectedTable?.id || occupiedTables[0]?.id || '')
+    setTransferTargetId('')
+    setTransferOpen(true)
+  }
+
   useEffect(() => {
     if (floors.length > 0 && !floors.includes(floor)) {
       setFloor(floors[0])
     }
   }, [floors, floor])
 
+  const tableLabel = (table: TableDto) => `T${table.number} · ${table.floor}${table.currentOrder ? ` · ${table.currentOrder.orderNumber}` : ''}`
+
   return (
     <PageShell>
       <div className="page-container">
         <PageHeader
           title="Table Management"
-          description="Live floor plan — updates automatically when POS orders are placed"
+          description="Multi-floor plan — Ground for kitchen area, upper floors for seating / hall"
           actions={
             <>
               <Button type="button" variant="outline" onClick={() => refetch()} disabled={isFetching}>
                 <RefreshCw className={cn('h-4 w-4 mr-2', isFetching && 'animate-spin')} /> Refresh
               </Button>
-              <Button type="button" variant="outline" onClick={handleMerge} disabled={mergeMutation.isPending}>
+              <Button type="button" variant="outline" onClick={openMerge} disabled={mergeMutation.isPending || tables.length < 2}>
                 <Merge className="h-4 w-4 mr-2" /> Merge
               </Button>
-              <Button type="button" variant="outline" onClick={handleTransfer} disabled={transferMutation.isPending}>
+              <Button type="button" variant="outline" onClick={openTransfer} disabled={transferMutation.isPending || occupiedTables.length === 0}>
                 <ArrowRightLeft className="h-4 w-4 mr-2" /> Transfer
               </Button>
               <Button type="button" onClick={openAddDialog}>
@@ -202,15 +226,15 @@ export default function TablesPage() {
           </div>
         ) : isError ? (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
-            <p>Failed to load tables. Make sure the backend is running.</p>
+            <p>Could not load tables. Check your connection and try again.</p>
             <Button variant="outline" onClick={() => refetch()}>Retry</Button>
           </div>
         ) : (
           <>
             <Tabs value={floor} onValueChange={setFloor}>
-              <TabsList>
+              <TabsList className="flex h-auto flex-wrap">
                 {floors.map((f) => (
-                  <TabsTrigger key={f} value={f}>{f} Floor</TabsTrigger>
+                  <TabsTrigger key={f} value={f}>{f}</TabsTrigger>
                 ))}
               </TabsList>
             </Tabs>
@@ -261,7 +285,7 @@ export default function TablesPage() {
 
                   {floorTables.length === 0 && (
                     <div className="col-span-full flex flex-col items-center justify-center py-16 text-muted-foreground">
-                      <p className="text-sm">No tables on this floor yet</p>
+                      <p className="text-sm">No tables on {floor} yet</p>
                       <Button type="button" variant="outline" className="mt-4" onClick={openAddDialog}>
                         <Plus className="h-4 w-4 mr-2" /> Add First Table
                       </Button>
@@ -273,10 +297,12 @@ export default function TablesPage() {
           </>
         )}
 
-        {/* Add Table Dialog */}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogContent>
-            <DialogHeader><DialogTitle>Add Table</DialogTitle></DialogHeader>
+            <DialogHeader>
+              <DialogTitle>Add Table</DialogTitle>
+              <DialogDescription>Choose the floor where this table sits (Ground / 1st / 2nd / Hall).</DialogDescription>
+            </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-2">
                 <Label>Table Number</Label>
@@ -284,7 +310,18 @@ export default function TablesPage() {
               </div>
               <div className="space-y-2">
                 <Label>Floor</Label>
-                <Input value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })} placeholder="Ground, Rooftop, Patio..." />
+                <Select value={form.floor} onValueChange={(value) => setForm({ ...form, floor: value })}>
+                  <SelectTrigger><SelectValue placeholder="Select floor" /></SelectTrigger>
+                  <SelectContent>
+                    {floors.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Input
+                  className="mt-2"
+                  value={form.floor}
+                  onChange={(e) => setForm({ ...form, floor: e.target.value })}
+                  placeholder="Or type a custom floor name"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Capacity</Label>
@@ -311,7 +348,86 @@ export default function TablesPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Table Detail Dialog */}
+        <Dialog open={mergeOpen} onOpenChange={setMergeOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Merge tables</DialogTitle>
+              <DialogDescription>Move guests/orders from a source table onto a target table.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>From (source)</Label>
+                <Select value={mergeSourceId} onValueChange={setMergeSourceId}>
+                  <SelectTrigger><SelectValue placeholder="Select source table" /></SelectTrigger>
+                  <SelectContent>
+                    {tables.map((t) => <SelectItem key={t.id} value={t.id}>{tableLabel(t)}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>To (target)</Label>
+                <Select value={mergeTargetId} onValueChange={setMergeTargetId}>
+                  <SelectTrigger><SelectValue placeholder="Select target table" /></SelectTrigger>
+                  <SelectContent>
+                    {tables.filter((t) => t.id !== mergeSourceId).map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{tableLabel(t)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setMergeOpen(false)}>Cancel</Button>
+              <Button
+                disabled={!mergeSourceId || !mergeTargetId || mergeSourceId === mergeTargetId || mergeMutation.isPending}
+                onClick={() => mergeMutation.mutate({ sourceTableIds: [mergeSourceId], targetTableId: mergeTargetId })}
+              >
+                {mergeMutation.isPending ? 'Merging…' : 'Merge tables'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Transfer order</DialogTitle>
+              <DialogDescription>Move the active order from one table to another (for example Ground → 1st Floor).</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>From table (with order)</Label>
+                <Select value={transferSourceId} onValueChange={setTransferSourceId}>
+                  <SelectTrigger><SelectValue placeholder="Select occupied table" /></SelectTrigger>
+                  <SelectContent>
+                    {occupiedTables.map((t) => <SelectItem key={t.id} value={t.id}>{tableLabel(t)}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>To table</Label>
+                <Select value={transferTargetId} onValueChange={setTransferTargetId}>
+                  <SelectTrigger><SelectValue placeholder="Select destination table" /></SelectTrigger>
+                  <SelectContent>
+                    {(availableTargets.length ? availableTargets : tables)
+                      .filter((t) => t.id !== transferSourceId)
+                      .map((t) => <SelectItem key={t.id} value={t.id}>{tableLabel(t)}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setTransferOpen(false)}>Cancel</Button>
+              <Button
+                disabled={!transferSourceId || !transferTargetId || transferSourceId === transferTargetId || transferMutation.isPending}
+                onClick={() => transferMutation.mutate({ id: transferSourceId, targetTableId: transferTargetId })}
+              >
+                {transferMutation.isPending ? 'Transferring…' : 'Transfer order'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
           <DialogContent>
             <DialogHeader>
@@ -341,6 +457,15 @@ export default function TablesPage() {
                   <p className="text-sm text-muted-foreground">No active order on this table</p>
                 )}
 
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" size="sm" className="flex-1" onClick={() => { setDetailOpen(false); openTransfer() }}>
+                    <ArrowRightLeft className="h-3.5 w-3.5 mr-1" /> Transfer
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="flex-1" onClick={() => { setDetailOpen(false); openMerge() }}>
+                    <Merge className="h-3.5 w-3.5 mr-1" /> Merge
+                  </Button>
+                </div>
+
                 <Separator />
 
                 <div className="space-y-2">
@@ -365,7 +490,7 @@ export default function TablesPage() {
                   </div>
                   {selectedTable.currentOrder && (
                     <p className="text-xs text-muted-foreground">
-                      Table is occupied by an active order. Complete the order in Kitchen or Orders to free it.
+                      Mark the order Completed in Orders after payment to free this table and record sales.
                     </p>
                   )}
                 </div>

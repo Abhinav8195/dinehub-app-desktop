@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useSelector } from 'react-redux'
-import { useNavigate } from 'react-router-dom'
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Eye, Printer, RefreshCw, Search, ShoppingBag, CircleDollarSign, Clock3, CheckCircle2, Trash2 } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Eye, Flag, Printer, RefreshCw, Search, ShoppingBag, CircleDollarSign, Clock3, CheckCircle2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/common/PageHeader'
 import { PageShell } from '@/components/common/PageShell'
@@ -18,9 +17,9 @@ import { ordersApi } from '@/api/orders.api'
 import { branchesApi } from '@/api/phase1.api'
 import { settingsApi } from '@/api/settings.api'
 import type { PosOrder } from '@/api/types/pos.types'
-import type { RootState } from '@/store'
 import { buildReceiptHtml } from '@/lib/print/receipt'
 import { formatCurrency, formatDateTime, formatRelativeTime } from '@/lib/utils'
+import { formatApiError } from '@/api/management-utils'
 import { OrderDetailDialog } from './components/OrderDetailDialog'
 import { OrderStatusBadge } from './components/OrderStatusBadge'
 import { getDateRange, labelize, matchesOrder, normalize, orderItemSummary, type DatePreset } from './order-utils'
@@ -74,8 +73,8 @@ async function printOrderReceipt(order: PosOrder) {
 
 export default function OrdersPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const queryClient = useQueryClient()
-  const selectedBranchId = useSelector((state: RootState) => state.app.selectedBranchId)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search)
   const [datePreset, setDatePreset] = useState<DatePreset>('today')
@@ -85,41 +84,70 @@ export default function OrdersPage() {
   const [paymentStatus, setPaymentStatus] = useState(ALL)
   const [paymentMethod, setPaymentMethod] = useState(ALL)
   const [orderType, setOrderType] = useState(ALL)
-  const [branchId, setBranchId] = useState(selectedBranchId || ALL)
+  // Default to all branches — topbar branch is context, not a hidden orders filter
+  const [branchId, setBranchId] = useState(ALL)
   const [sortBy, setSortBy] = useState('createdAt')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(1)
   const [selectedOrder, setSelectedOrder] = useState<PosOrder | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [printingId, setPrintingId] = useState<string | null>(null)
-  const range = useMemo(() => getDateRange(datePreset, new Date(), fromDate, toDate), [datePreset, fromDate, toDate])
+  const [nowTick, setNowTick] = useState(() => Date.now())
+  const range = useMemo(
+    () => getDateRange(datePreset, new Date(nowTick), fromDate, toDate),
+    [datePreset, fromDate, toDate, nowTick],
+  )
 
   useEffect(() => setPage(1), [debouncedSearch, datePreset, fromDate, toDate, status, paymentStatus, paymentMethod, orderType, branchId, sortBy, sortOrder])
 
+  // Fresh "today" window + forced refetch whenever this page is opened (tab / route change)
+  useEffect(() => {
+    setNowTick(Date.now())
+    void queryClient.resetQueries({ queryKey: ['orders'] })
+  }, [location.pathname, queryClient])
+
   const params = useMemo(() => ({
-    search: debouncedSearch || undefined, from: range.from, to: range.to,
+    search: debouncedSearch || undefined,
+    period: datePreset,
+    from: range.from,
+    to: range.to,
+    fromDate: datePreset === 'custom' ? fromDate || undefined : undefined,
+    toDate: datePreset === 'custom' ? toDate || undefined : undefined,
     status: status === ALL ? undefined : status,
     paymentStatus: paymentStatus === ALL ? undefined : paymentStatus,
     paymentMethod: paymentMethod === ALL ? undefined : paymentMethod,
     type: orderType === ALL ? undefined : orderType,
     branchId: branchId === ALL ? undefined : branchId,
     page, limit: PAGE_SIZE, sortBy, sortOrder,
-  }), [debouncedSearch, range, status, paymentStatus, paymentMethod, orderType, branchId, page, sortBy, sortOrder])
+  }), [debouncedSearch, datePreset, range, fromDate, toDate, status, paymentStatus, paymentMethod, orderType, branchId, page, sortBy, sortOrder])
 
   const ordersQuery = useQuery({
-    queryKey: ['orders', params],
+    queryKey: ['orders', 'list', params],
     queryFn: ({ signal }) => ordersApi.list(params, signal),
-    refetchInterval: 30_000,
+    staleTime: 0,
+    gcTime: 60_000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchInterval: 10_000,
   })
   const { data: branches = [] } = useQuery({ queryKey: ['branches'], queryFn: branchesApi.list })
 
   const filteredOrders = useMemo(() => {
+    // Server already applies period / status / type / branch. Only re-apply search +
+    // custom local range so soft navigation never hides valid API rows.
     const rows = (ordersQuery.data?.orders ?? []).filter((order) => {
-      const created = new Date(order.createdAt).getTime()
-      return matchesOrder(order, debouncedSearch) && (!range.from || created >= new Date(range.from).getTime()) && (!range.to || created <= new Date(range.to).getTime()) &&
-        (status === ALL || normalize(order.status) === status) && (paymentStatus === ALL || normalize(order.paymentStatus) === paymentStatus) &&
-        (paymentMethod === ALL || normalize(order.paymentMethod) === paymentMethod) && (orderType === ALL || normalize(order.type) === orderType) &&
-        (branchId === ALL || !order.branchId || order.branchId === branchId)
+      if (!matchesOrder(order, debouncedSearch)) return false
+      if (datePreset === 'custom') {
+        const created = new Date(order.createdAt).getTime()
+        if (range.from && created < new Date(range.from).getTime()) return false
+        if (range.to && created > new Date(range.to).getTime()) return false
+      }
+      if (branchId !== ALL && order.branchId && order.branchId !== branchId) return false
+      if (status !== ALL && normalize(order.status) !== status) return false
+      if (paymentStatus !== ALL && normalize(order.paymentStatus) !== paymentStatus) return false
+      if (paymentMethod !== ALL && normalize(order.paymentMethod) !== paymentMethod) return false
+      if (orderType !== ALL && normalize(order.type) !== orderType) return false
+      return true
     })
     return [...rows].sort((a, b) => {
       const values: Record<string, [string | number, string | number]> = {
@@ -128,7 +156,7 @@ export default function OrdersPage() {
       const [left, right] = values[sortBy] ?? values.createdAt
       return (left < right ? -1 : left > right ? 1 : 0) * (sortOrder === 'asc' ? 1 : -1)
     })
-  }, [ordersQuery.data, debouncedSearch, range, status, paymentStatus, paymentMethod, orderType, branchId, sortBy, sortOrder])
+  }, [ordersQuery.data, debouncedSearch, datePreset, range, status, paymentStatus, paymentMethod, orderType, branchId, sortBy, sortOrder])
 
   const meta = ordersQuery.data?.meta
   const visibleOrders = meta ? filteredOrders : filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -145,9 +173,20 @@ export default function OrdersPage() {
     onSuccess: (updated) => {
       setSelectedOrder(updated)
       queryClient.invalidateQueries({ queryKey: ['orders'] })
-      toast.success(`Order moved to ${labelize(updated.status)}`)
+      queryClient.invalidateQueries({ queryKey: ['tables'] })
+      const status = labelize(updated.status)
+      if (normalize(updated.status) === 'completed') {
+        const tableLabel = updated.table?.label || updated.table?.number
+        toast.success(
+          tableLabel
+            ? `Order completed (payment received) · Table ${tableLabel} is now free · Sale recorded`
+            : 'Order completed (payment received) · Sale recorded'
+        )
+      } else {
+        toast.success(`Order moved to ${status}`)
+      }
     },
-    onError: (error: Error) => toast.error(error.message || 'Unable to update the order'),
+    onError: (error) => toast.error(formatApiError(error, 'Could not update the order')),
   })
 
   const deleteOrder = useMutation({
@@ -197,7 +236,7 @@ export default function OrdersPage() {
     else { setSortBy(key); setSortOrder('asc') }
   }
   const SortIcon = ({ column }: { column: string }) => sortBy !== column ? null : sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
-  const resetFilters = () => { setSearch(''); setDatePreset('today'); setFromDate(''); setToDate(''); setStatus(ALL); setPaymentStatus(ALL); setPaymentMethod(ALL); setOrderType(ALL); setBranchId(selectedBranchId || ALL) }
+  const resetFilters = () => { setSearch(''); setDatePreset('today'); setFromDate(''); setToDate(''); setStatus(ALL); setPaymentStatus(ALL); setPaymentMethod(ALL); setOrderType(ALL); setBranchId(ALL); setNowTick(Date.now()) }
 
   return (
     <PageShell>
@@ -235,7 +274,7 @@ export default function OrdersPage() {
           <div className="mt-3 flex justify-end"><Button variant="ghost" size="sm" onClick={resetFilters}>Reset filters</Button></div>
         </section>
 
-        {ordersQuery.isLoading ? <OrdersSkeleton /> : ordersQuery.isError ? <StateMessage title="Orders couldn’t be loaded" description="Check your connection and try again." action={<Button variant="outline" onClick={() => ordersQuery.refetch()}>Try again</Button>} /> : visibleOrders.length === 0 ? <StateMessage title="No matching orders" description="Try widening the date range or clearing some filters." action={<Button variant="outline" onClick={resetFilters}>Clear filters</Button>} /> : <>
+        {ordersQuery.isPending || (ordersQuery.isFetching && !ordersQuery.data) ? <OrdersSkeleton /> : ordersQuery.isError ? <StateMessage title="Orders couldn’t be loaded" description="Check your connection and try again." action={<Button variant="outline" onClick={() => ordersQuery.refetch()}>Try again</Button>} /> : visibleOrders.length === 0 ? <StateMessage title="No matching orders" description="Try widening the date range or clearing some filters." action={<Button variant="outline" onClick={resetFilters}>Clear filters</Button>} /> : <>
           <div className="overflow-hidden rounded-2xl border bg-card"><div className="overflow-x-auto"><Table>
             <TableHeader><TableRow>
               <SortableHead label="Order" column="orderNumber" onSort={toggleSort}><SortIcon column="orderNumber" /></SortableHead>
@@ -250,11 +289,29 @@ export default function OrdersPage() {
             </TableRow></TableHeader>
             <TableBody>{visibleOrders.map((order) => {
               const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0)
+              const itemNotes = order.items.map((item) => item.notes).filter(Boolean) as string[]
+              const hasNote = Boolean(order.instructions?.trim()) || itemNotes.length > 0
+              const noteText = [order.instructions, ...itemNotes].filter(Boolean).join(' · ')
               return (
               <TableRow key={order.id} tabIndex={0} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" onDoubleClick={() => openOrderDetails(order)}>
               <TableCell className="font-semibold whitespace-nowrap">
-                <p>{order.orderNumber}</p>
-                {order.instructions && <p className="mt-0.5 max-w-[140px] truncate text-xs text-muted-foreground" title={order.instructions}>Note: {order.instructions}</p>}
+                <div className="flex items-start gap-1.5">
+                  <p>{order.orderNumber}</p>
+                  {hasNote && (
+                    <span
+                      className="inline-flex items-center gap-0.5 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning"
+                      title={noteText}
+                    >
+                      <Flag className="h-3 w-3" />
+                      Note
+                    </span>
+                  )}
+                </div>
+                {hasNote && (
+                  <p className="mt-0.5 max-w-[180px] truncate text-xs text-muted-foreground" title={noteText}>
+                    {noteText}
+                  </p>
+                )}
               </TableCell>
               <TableCell className="whitespace-nowrap"><p>{formatDateTime(order.createdAt)}</p><p className="text-xs text-muted-foreground">{formatRelativeTime(order.createdAt)}</p></TableCell>
               <TableCell className="min-w-[180px]">

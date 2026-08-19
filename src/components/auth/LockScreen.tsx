@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Delete } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -6,11 +7,11 @@ import { Input } from '@/components/ui/input'
 import { useAuth } from '@/hooks/useAuth'
 import { useShiftStore } from '@/store/shiftStore'
 import { BrandLogo } from '@/components/brand/BrandLogo'
-import { BRAND } from '@/constants/brand'
 import { ApiError } from '@/api/types/common'
 
 export function LockScreen() {
-  const { user } = useAuth()
+  const navigate = useNavigate()
+  const { user, logout } = useAuth()
   const unlockScreen = useShiftStore((s) => s.unlockScreen)
   const [pin, setPin] = useState('')
   const [loading, setLoading] = useState(false)
@@ -32,6 +33,18 @@ export function LockScreen() {
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Unlock failed')
       setPin('')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSignOut = async () => {
+    setLoading(true)
+    try {
+      await logout()
+      navigate('/login')
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Sign out failed')
     } finally {
       setLoading(false)
     }
@@ -74,6 +87,9 @@ export function LockScreen() {
 
         <Button type="button" className="mt-6 w-full" onClick={handleUnlock} disabled={loading}>
           Unlock
+        </Button>
+        <Button type="button" variant="ghost" className="mt-2 w-full text-muted-foreground" onClick={() => void handleSignOut()} disabled={loading}>
+          Sign out to login
         </Button>
       </div>
     </div>

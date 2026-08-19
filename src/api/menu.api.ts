@@ -22,6 +22,8 @@ const mapMenuItem = (item: MenuItem): MenuItem => ({
   ...item,
   available: item.available,
   popular: item.popular,
+  isVegetarian: item.isVegetarian ?? (item.dietary === 'veg' ? true : item.dietary === 'nonveg' ? false : null),
+  dietary: item.dietary ?? (item.isVegetarian === true ? 'veg' : item.isVegetarian === false ? 'nonveg' : null),
   modifierGroups: item.modifierGroups ?? [],
   ...(item.hasVariants !== undefined || item.variants !== undefined ? {
     hasVariants: item.hasVariants ?? Boolean(item.variants?.length),
