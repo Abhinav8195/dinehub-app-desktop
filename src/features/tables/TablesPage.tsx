@@ -155,6 +155,15 @@ export default function TablesPage() {
 
   const handleStatusChange = (status: string) => {
     if (!selectedTable) return
+    if (
+      status === 'available' &&
+      selectedTable.currentOrder &&
+      !window.confirm(
+        `Free table T${selectedTable.number}?\n\nActive order ${selectedTable.currentOrder.orderNumber} will be unassigned from this table so you can seat new guests.`,
+      )
+    ) {
+      return
+    }
     statusMutation.mutate({ id: selectedTable.id, status })
   }
 
@@ -478,19 +487,20 @@ export default function TablesPage() {
                         variant={selectedTable.status === s ? 'default' : 'outline'}
                         size="sm"
                         className="capitalize"
-                        disabled={
-                          statusMutation.isPending ||
-                          (selectedTable.currentOrder != null && s !== 'occupied')
-                        }
+                        disabled={statusMutation.isPending}
                         onClick={() => handleStatusChange(s)}
                       >
                         {s}
                       </Button>
                     ))}
                   </div>
-                  {selectedTable.currentOrder && (
+                  {selectedTable.currentOrder ? (
                     <p className="text-xs text-muted-foreground">
-                      Mark the order Completed in Orders after payment to free this table and record sales.
+                      Tip: choose <span className="font-medium">Available</span> to free this table now, or mark the order Completed / Delete it in Orders.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      You can set Available, Occupied, Reserved, or Cleaning anytime.
                     </p>
                   )}
                 </div>

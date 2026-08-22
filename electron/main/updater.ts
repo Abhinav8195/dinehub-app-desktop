@@ -73,7 +73,7 @@ export function initializeAutoUpdater(): void {
 
     if (Notification.isSupported()) {
       new Notification({
-        title: 'DineHub update ready',
+        title: 'DiningHub update ready',
         body: `Version ${info.version} has downloaded and will install automatically when you close the app.`
       }).show()
     }
@@ -82,8 +82,8 @@ export function initializeAutoUpdater(): void {
     if (!window || window.isDestroyed()) return
     const result = await dialog.showMessageBox(window, {
       type: 'info',
-      title: 'DineHub update ready',
-      message: `DineHub ${info.version} is ready to install.`,
+      title: 'DiningHub update ready',
+      message: `DiningHub ${info.version} is ready to install.`,
       detail: 'Restart now to finish the automatic update, or choose Later to install when you close the app.',
       buttons: ['Restart & Install', 'Later'],
       defaultId: 0,

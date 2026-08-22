@@ -75,7 +75,7 @@ export function buildReceiptHtml(data: ReceiptData): string {
   </style></head><body><main class="receipt">
     <header class="center">
       ${restaurant.showLogo !== false && restaurant.logoUrl ? `<img class="logo" src="${escapeHtml(restaurant.logoUrl)}" alt="" onerror="this.remove()">` : ''}
-      <div class="restaurant-name">${escapeHtml(restaurant.name || 'DineHub Restaurant')}</div>
+      <div class="restaurant-name">${escapeHtml(restaurant.name || 'DiningHub Restaurant')}</div>
       ${restaurant.address ? `<div>${escapeHtml(restaurant.address)}</div>` : ''}
       ${restaurant.phone ? `<div>Mobile: ${escapeHtml(restaurant.phone)}</div>` : ''}
       ${restaurant.gstin ? `<div>GSTIN: ${escapeHtml(restaurant.gstin)}</div>` : ''}

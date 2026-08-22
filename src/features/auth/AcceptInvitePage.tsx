@@ -54,7 +54,7 @@ export default function AcceptInvitePage() {
         <CardHeader className="text-center">
           <BrandLogo size="md" orientation="vertical" className="mx-auto mb-2" />
           <CardTitle>Accept invitation</CardTitle>
-          <CardDescription>Set your password to join the restaurant team on DineHub.</CardDescription>
+          <CardDescription>Set your password to join the restaurant team on DiningHub.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {!token && (

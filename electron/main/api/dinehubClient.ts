@@ -36,7 +36,7 @@ export interface MenuImageUpload {
 const baseUrl = (
   process.env.DINEHUB_API_URL ||
   import.meta.env.MAIN_VITE_API_URL ||
-  'https://dininghub.in/api/v1'
+  'http://localhost:3000/api/v1'
 ).replace(/\/$/, '')
 const debugApi = import.meta.env.DEV || process.env.DINEHUB_API_DEBUG === '1'
 
@@ -49,23 +49,23 @@ interface RefreshState {
 const refreshState: RefreshState = { promise: null, resolve: null, reject: null }
 
 function logRequest(method: string, url: string): void {
-  if (debugApi) console.info(`[DineHub API] -> ${method} ${url}`)
+  if (debugApi) console.info(`[DiningHub API] -> ${method} ${url}`)
 }
 
 function logResponse(method: string, url: string, status: number): void {
-  if (debugApi) console.info(`[DineHub API] <- ${status} ${method} ${url}`)
+  if (debugApi) console.info(`[DiningHub API] <- ${status} ${method} ${url}`)
 }
 
 function logFailure(method: string, url: string, error: unknown): void {
   if (!debugApi) return
   const message = error instanceof Error ? error.message : 'Network request failed'
-  console.error(`[DineHub API] !! ${method} ${url} - ${message}`)
+  console.error(`[DiningHub API] !! ${method} ${url} - ${message}`)
 }
 
 function assertRequest(request: ApiRequest): void {
   if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) throw new Error('Unsupported API method')
   if (!request.path.startsWith('/') || request.path.startsWith('//') || request.path.includes('://')) {
-    throw new Error('Invalid DineHub API path')
+    throw new Error('Invalid DiningHub API path')
   }
 }
 
@@ -99,8 +99,8 @@ async function parseResponse(response: Response, responseType: DesktopResponseTy
       const failure: ApiFailure = {
         statusCode: response.status,
         message: isHtml
-          ? `DineHub API gateway returned ${response.status || 'an invalid response'}. Please try again shortly.`
-          : 'DineHub API returned an invalid response.'
+          ? `DiningHub API gateway returned ${response.status || 'an invalid response'}. Please try again shortly.`
+          : 'DiningHub API returned an invalid response.'
       }
       throw failure
     }
@@ -176,6 +176,17 @@ function requestHeaders(request: ApiRequest, accessToken: string | null): Record
   return headers
 }
 
+/** Login/refresh/register 401s must not recurse into token refresh. /auth/me should. */
+function isAuthCredentialPath(path: string): boolean {
+  return (
+    path.startsWith('/auth/login')
+    || path.startsWith('/auth/refresh')
+    || path.startsWith('/auth/register')
+    || path.startsWith('/auth/forgot-password')
+    || path.startsWith('/auth/reset-password')
+  )
+}
+
 async function send(request: ApiRequest, accessToken: string | null): Promise<DesktopApiResponse> {
   const headers = requestHeaders(request, accessToken)
   const url = buildUrl(request.path, request.query)
@@ -193,7 +204,7 @@ async function send(request: ApiRequest, accessToken: string | null): Promise<De
     logFailure(request.method, url, error)
     throw error
   }
-  if (response.status === 401 && !request.path.startsWith('/auth/')) {
+  if (response.status === 401 && !isAuthCredentialPath(request.path)) {
     const freshToken = await refreshAccessToken()
     return sendOnce(request, freshToken)
   }

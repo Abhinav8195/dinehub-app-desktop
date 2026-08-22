@@ -31,7 +31,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
   headers: { 'Content-Type': 'application/json' }
 })
 
-describe('main-process DineHub client', () => {
+describe('main-process DiningHub client', () => {
   beforeEach(() => {
     setTokens.mockClear()
     clearTokens.mockClear()
@@ -57,7 +57,7 @@ describe('main-process DineHub client', () => {
     }))
     const body = {
       email: 'owner@example.com', password: 'secret',
-      deviceName: 'DineHub Desktop', deviceType: 'electron-desktop', deviceId: 'device-1'
+      deviceName: 'DiningHub Desktop', deviceType: 'electron-desktop', deviceId: 'device-1'
     } as const
     await requestDineHub({ method: 'POST', path: '/auth/login', body })
     expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))).toEqual(body)
@@ -144,7 +144,7 @@ describe('main-process DineHub client', () => {
     await expect(requestDineHub({
       method: 'GET',
       path: 'https://evil.example/steal'
-    })).rejects.toThrow('Invalid DineHub API path')
+    })).rejects.toThrow('Invalid DiningHub API path')
     expect(fetch).not.toHaveBeenCalled()
   })
 

@@ -9,7 +9,7 @@ const appIcon = isDev
   ? join(app.getAppPath(), 'build', 'icon.png')
   : join(process.resourcesPath, 'assets', 'notification-icon.png')
 
-app.setName('DineHub')
+app.setName('DiningHub')
 
 const CSP_POLICY = [
   "default-src 'self'",
@@ -48,7 +48,7 @@ function createWindow(): void {
     show: false,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     backgroundColor: '#FFFFFF',
-    title: 'DineHub',
+    title: 'DiningHub',
     ...(process.platform === 'darwin' ? {} : { icon: appIcon }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

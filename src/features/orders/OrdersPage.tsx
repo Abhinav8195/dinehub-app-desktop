@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ordersApi } from '@/api/orders.api'
+import { tablesApi } from '@/api/tables.api'
 import { branchesApi } from '@/api/phase1.api'
 import { settingsApi } from '@/api/settings.api'
 import type { PosOrder } from '@/api/types/pos.types'
@@ -100,8 +101,11 @@ export default function OrdersPage() {
 
   useEffect(() => setPage(1), [debouncedSearch, datePreset, fromDate, toDate, status, paymentStatus, paymentMethod, orderType, branchId, sortBy, sortOrder])
 
-  // Fresh "today" window + forced refetch whenever this page is opened (tab / route change)
+  // Fresh "today" filters + forced refetch whenever this page is opened (tab / route change)
   useEffect(() => {
+    setDatePreset('today')
+    setFromDate('')
+    setToDate('')
     setNowTick(Date.now())
     void queryClient.resetQueries({ queryKey: ['orders'] })
   }, [location.pathname, queryClient])
@@ -190,15 +194,21 @@ export default function OrdersPage() {
   })
 
   const deleteOrder = useMutation({
-    mutationFn: (id: string) => ordersApi.delete(id),
-    onSuccess: (_data, id) => {
-      if (selectedOrder?.id === id) {
+    mutationFn: async (order: PosOrder) => {
+      await ordersApi.delete(order.id)
+      if (order.tableId) {
+        await tablesApi.updateStatus(order.tableId, 'AVAILABLE').catch(() => {})
+      }
+      return order
+    },
+    onSuccess: (order) => {
+      if (selectedOrder?.id === order.id) {
         setDetailOpen(false)
         setSelectedOrder(null)
       }
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       queryClient.invalidateQueries({ queryKey: ['tables'] })
-      toast.success('Order deleted')
+      toast.success(order.tableId ? 'Order deleted · table set to available' : 'Order deleted')
     },
     onError: (error: Error) => toast.error(error.message || 'Unable to delete the order'),
   })
@@ -217,7 +227,7 @@ export default function OrdersPage() {
 
   const handleDelete = (order: PosOrder) => {
     if (!window.confirm(`Delete order ${order.orderNumber}? This cannot be undone.`)) return
-    deleteOrder.mutate(order.id)
+    deleteOrder.mutate(order)
   }
 
   const openOrderDetails = async (order: PosOrder) => {
@@ -345,7 +355,7 @@ export default function OrdersPage() {
                     variant="ghost"
                     size="sm"
                     className="text-danger hover:text-danger"
-                    disabled={deleteOrder.isPending && deleteOrder.variables === order.id}
+                    disabled={deleteOrder.isPending && deleteOrder.variables?.id === order.id}
                     onClick={() => handleDelete(order)}
                     aria-label={`Delete order ${order.orderNumber}`}
                   >

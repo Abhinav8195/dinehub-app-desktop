@@ -23,7 +23,7 @@ const initialState: AppState = {
   selectedBranchId: '',
   language: 'en',
   isOnline: true,
-  printerConnected: true,
+  printerConnected: false,
   cashRegisterOpen: true,
   recentPages: [],
   favorites: ['dashboard', 'pos', 'orders'],
@@ -66,6 +66,7 @@ const appSlice = createSlice({
     setBranch: (state, action: PayloadAction<string>) => { state.selectedBranchId = action.payload },
     setLanguage: (state, action: PayloadAction<string>) => { state.language = action.payload },
     setOnlineStatus: (state, action: PayloadAction<boolean>) => { state.isOnline = action.payload },
+    setPrinterConnected: (state, action: PayloadAction<boolean>) => { state.printerConnected = action.payload },
     addRecentPage: (state, action: PayloadAction<string>) => {
       state.recentPages = [action.payload, ...state.recentPages.filter((p) => p !== action.payload)].slice(0, 10)
       storeIds(RECENT_PAGES_KEY, state.recentPages)
@@ -90,7 +91,7 @@ const appSlice = createSlice({
 
 export const {
   toggleSidebar, setSidebarCollapsed, toggleDarkMode, setDarkMode,
-  setRestaurant, setBranch, setLanguage, setOnlineStatus,
+  setRestaurant, setBranch, setLanguage, setOnlineStatus, setPrinterConnected,
   addRecentPage, toggleFavorite, togglePinnedMenu, setCommandPaletteOpen
 } = appSlice.actions
 export default appSlice.reducer

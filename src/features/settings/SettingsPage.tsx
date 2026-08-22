@@ -121,7 +121,7 @@ export default function SettingsPage() {
   const checkForUpdates = async () => {
     const next = await window.electronAPI.updates.check()
     setUpdateStatus(next)
-    if (next.state === 'not-available') toast.success('DineHub is up to date')
+    if (next.state === 'not-available') toast.success('DiningHub is up to date')
     if (next.state === 'error') toast.error(next.message || 'Unable to check for updates')
   }
 
@@ -384,7 +384,7 @@ export default function SettingsPage() {
                     const html = buildReceiptHtml({
                       orderNumber: '#1042',
                       invoiceNumber: '1042',
-                      restaurant: { name: restaurantForm.name || 'DineHub Restaurant', gstin: restaurantForm.gstin, address: restaurantForm.address, phone: restaurantForm.phone },
+                      restaurant: { name: restaurantForm.name || 'DiningHub Restaurant', gstin: restaurantForm.gstin, address: restaurantForm.address, phone: restaurantForm.phone },
                       customerName: 'Walk-in',
                       table: 'T-05',
                       orderType: 'Dine In',
@@ -491,7 +491,7 @@ export default function SettingsPage() {
                         {updateStatus?.state === 'downloaded' && `Version ${updateStatus.version} is ready to install.`}
                         {updateStatus?.state === 'not-available' && 'You are using the latest version.'}
                         {updateStatus?.state === 'error' && (updateStatus.message || 'Update check failed.')}
-                        {(!updateStatus || updateStatus.state === 'idle') && 'Enabled — DineHub checks whenever the app opens.'}
+                        {(!updateStatus || updateStatus.state === 'idle') && 'Enabled — DiningHub checks whenever the app opens.'}
                       </p>
                     </div>
                     {updateStatus?.state === 'downloaded' ? (

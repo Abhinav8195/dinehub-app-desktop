@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Edit, Eye, Image, Loader2, Plus, RefreshCw, Star, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -14,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApiError } from '@/api/types/common'
+import { inventoryApi } from '@/api/inventory.api'
 import { resolveMenuImageUrl, menuItemService } from '@/api/menu.api'
 import type { Category, MenuItem } from '@/api/types/menu.types'
 import { formatCurrency } from '@/lib/utils'
@@ -21,6 +23,13 @@ import { useMenuManagement } from './useMenuManagement'
 import { ImageUploadField } from './components/ImageUploadField'
 import { VariantEditor } from './components/VariantEditor'
 import { effectiveVariantPrice, emptyVariant, validateVariants, type VariantDraft, type VariantErrors } from './variants'
+import { useFeatureAccess } from '@/hooks/useFeatureAccess'
+import { formatInventoryUnit, shortInventoryUnit, suggestedRecipeQty } from '@/constants/inventory-units'
+
+interface RecipeDraft {
+  inventoryItemId: string
+  quantity: string
+}
 
 interface ItemForm {
   categoryId: string
@@ -33,11 +42,13 @@ interface ItemForm {
   isVegetarian: boolean | null
   hasVariants: boolean
   variants: VariantDraft[]
+  recipeLines: RecipeDraft[]
 }
 
 const emptyItem = (categoryId = ''): ItemForm => ({
   categoryId, name: '', description: '', price: '0', imageUrl: '',
-  isAvailable: true, isPopular: false, isVegetarian: null, hasVariants: false, variants: []
+  isAvailable: true, isPopular: false, isVegetarian: null, hasVariants: false, variants: [],
+  recipeLines: [],
 })
 
 function errorMessage(error: unknown): string {
@@ -80,6 +91,22 @@ export default function MenuPage() {
   const categories = menu.categories.data ?? []
   const items = menu.items.data ?? []
   const navigate = useNavigate()
+  const featureAccess = useFeatureAccess()
+  const inventoryEnabled = featureAccess.hasAnyFeature([
+    'INVENTORY_DASHBOARD',
+    'INVENTORY_ITEMS',
+    'RAW_MATERIALS',
+  ])
+  const stockItemsQuery = useQuery({
+    queryKey: ['inventory', 'items', 'menu-recipe-picker'],
+    queryFn: () => inventoryApi.listItems({ page: 1, limit: 100, isActive: 'true' }),
+    enabled: itemDialog && inventoryEnabled,
+    retry: 1,
+  })
+  const stockItems = stockItemsQuery.data?.data ?? []
+  const stockItemsError = stockItemsQuery.isError
+    ? errorMessage(stockItemsQuery.error)
+    : null
 
   useEffect(() => setSelectedIds(new Set()), [selectedCategory, showInactive])
 
@@ -113,7 +140,13 @@ export default function MenuPage() {
         id: variant.id, name: variant.name, price: String(variant.price),
         discountedPrice: variant.discountedPrice == null ? '' : String(variant.discountedPrice),
         isAvailable: variant.isAvailable, isDefault: variant.isDefault
-      }))
+      })),
+      recipeLines: (item.recipeLines ?? [])
+        .filter((line) => !line.variantId)
+        .map((line) => ({
+          inventoryItemId: line.inventoryItemId,
+          quantity: String(line.quantity),
+        })),
     })
     setVariantErrors({})
     setItemDialog(true)
@@ -127,6 +160,14 @@ export default function MenuPage() {
     const errors = itemForm.hasVariants ? validateVariants(itemForm.variants) : {}
     setVariantErrors(errors)
     if (Object.keys(errors).length) return toast.error('Review the highlighted variant fields')
+
+    for (const line of itemForm.recipeLines) {
+      if (!inventoryEnabled) break
+      if (!line.inventoryItemId) return toast.error('Select a stock item for every recipe row')
+      const qty = Number(line.quantity)
+      if (!Number.isFinite(qty) || qty <= 0) return toast.error('Recipe quantity must be greater than zero')
+    }
+
     const variantPayload = itemForm.hasVariants ? itemForm.variants.map((variant, sortOrder) => ({
       ...(variant.id ? { id: variant.id } : {}),
       name: variant.name.trim(),
@@ -136,6 +177,14 @@ export default function MenuPage() {
       isDefault: variant.isDefault,
       sortOrder,
     })) : undefined
+
+    const recipeLines = inventoryEnabled
+      ? itemForm.recipeLines.map((line) => ({
+          inventoryItemId: line.inventoryItemId,
+          quantity: Number(line.quantity),
+        }))
+      : undefined
+
     // Update DTO forbids nested `variants` — only create accepts them inline.
     const body = {
       categoryId: itemForm.categoryId,
@@ -147,6 +196,7 @@ export default function MenuPage() {
       isPopular: itemForm.isPopular,
       isVegetarian: itemForm.isVegetarian,
       hasVariants: itemForm.hasVariants,
+      ...(recipeLines !== undefined ? { recipeLines } : {}),
       ...(editingItem || !itemForm.hasVariants ? {} : { variants: variantPayload }),
     }
     try {
@@ -355,6 +405,128 @@ export default function MenuPage() {
                 onUploaded={(imageUrl) => setItemForm((form) => ({ ...form, imageUrl }))}
                 onUploadingChange={setItemImageUploading}
               />
+              {inventoryEnabled && (
+              <div className="space-y-2 rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="font-medium">Stock items (recipe)</p>
+                    <p className="text-xs text-muted-foreground">
+                      When this menu item is sold (order completed), raw materials are deducted in their own unit (g, kg, ml, pcs…).
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => navigate('/app/inventory/items')}
+                    >
+                      Manage inventory
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!stockItems.length}
+                      onClick={() => setItemForm((form) => ({
+                        ...form,
+                        recipeLines: [...form.recipeLines, { inventoryItemId: '', quantity: '1' }],
+                      }))}
+                    >
+                      <Plus className="mr-1 h-3.5 w-3.5" />
+                      Add stock item
+                    </Button>
+                  </div>
+                </div>
+                {stockItemsQuery.isLoading && <p className="text-xs text-muted-foreground">Loading inventory…</p>}
+                {stockItemsError && (
+                  <p className="text-xs text-destructive">Could not load inventory: {stockItemsError}</p>
+                )}
+                {!stockItemsQuery.isLoading && !stockItemsError && !stockItems.length && (
+                  <p className="text-xs text-amber-700">
+                    No inventory items found. Add raw materials under Inventory → All Items (use units like g, kg, pcs), then come back.
+                  </p>
+                )}
+                {itemForm.recipeLines.map((line, index) => {
+                  const selected = stockItems.find((row) => row.id === line.inventoryItemId)
+                  const unit = shortInventoryUnit(selected?.unit)
+                  return (
+                    <div key={`recipe-${index}`} className="grid grid-cols-[1fr_120px_auto] items-end gap-2">
+                      <div>
+                        <Label>Select stock item</Label>
+                        <Select
+                          value={line.inventoryItemId || undefined}
+                          onValueChange={(inventoryItemId) => {
+                            const picked = stockItems.find((row) => row.id === inventoryItemId)
+                            setItemForm((form) => ({
+                              ...form,
+                              recipeLines: form.recipeLines.map((row, i) => i === index
+                                ? {
+                                    inventoryItemId,
+                                    quantity: row.inventoryItemId === inventoryItemId
+                                      ? row.quantity
+                                      : suggestedRecipeQty(picked?.unit),
+                                  }
+                                : row),
+                            }))
+                          }}
+                        >
+                          <SelectTrigger><SelectValue placeholder="Choose item" /></SelectTrigger>
+                          <SelectContent className="z-[200]">
+                            {stockItems.map((row) => (
+                              <SelectItem key={row.id} value={row.id}>
+                                {row.name} · stock {row.quantity} {shortInventoryUnit(row.unit)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {selected && (
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            Unit: {formatInventoryUnit(selected.unit)} · available {selected.quantity} {unit}
+                            {Number(line.quantity) > 0
+                              ? ` · ~${Math.floor(Number(selected.quantity) / Number(line.quantity))} sales left at this recipe qty`
+                              : ''}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <Label>Qty / sale{unit ? ` (${unit})` : ''}</Label>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            min="0.001"
+                            step="0.001"
+                            value={line.quantity}
+                            onChange={(event) => setItemForm((form) => ({
+                              ...form,
+                              recipeLines: form.recipeLines.map((row, i) => i === index ? { ...row, quantity: event.target.value } : row),
+                            }))}
+                            className={unit ? 'pr-10' : undefined}
+                          />
+                          {unit ? (
+                            <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs font-medium text-muted-foreground">
+                              {unit}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive"
+                        onClick={() => setItemForm((form) => ({
+                          ...form,
+                          recipeLines: form.recipeLines.filter((_, i) => i !== index),
+                        }))}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )
+                })}
+              </div>
+              )}
               <label className="flex items-center justify-between"><span>Available</span><Switch checked={itemForm.isAvailable} onCheckedChange={(isAvailable) => setItemForm((form) => ({ ...form, isAvailable }))} /></label>
               <label className="flex items-center justify-between"><span>Popular</span><Switch checked={itemForm.isPopular} onCheckedChange={(isPopular) => setItemForm((form) => ({ ...form, isPopular }))} /></label>
               <div>
@@ -411,7 +583,7 @@ export default function MenuPage() {
         </Dialog>
 
         <Dialog open={Boolean(detail)} onOpenChange={(open) => !open && setDetail(null)}>
-          <DialogContent>{detail && <><DialogHeader><DialogTitle>{detail.name}</DialogTitle><DialogDescription>{detail.category}{!detail.hasVariants && ` · ${formatCurrency(detail.price)}`}</DialogDescription></DialogHeader><p className="text-sm">{detail.description || 'No description.'}</p>{detail.hasVariants && <div className="space-y-2">{detail.variants?.map((variant) => <div key={variant.id} className="flex justify-between rounded-lg border p-2 text-sm"><span>{variant.name}{variant.isDefault ? ' · Default' : ''}</span><span>{formatCurrency(effectiveVariantPrice(variant))}</span></div>)}</div>}<div className="flex flex-wrap gap-2"><Badge variant={detail.available ? 'success' : 'secondary'}>{detail.available ? 'Available' : 'Unavailable'}</Badge>{detail.popular && <Badge variant="warning">Popular</Badge>}{(detail.isVegetarian === true || detail.dietary === 'veg') && <Badge className="bg-emerald-600 text-white">Vegetarian</Badge>}{(detail.isVegetarian === false || detail.dietary === 'nonveg') && <Badge className="bg-rose-700 text-white">Non-vegetarian</Badge>}</div></>}</DialogContent>
+          <DialogContent>{detail && <><DialogHeader><DialogTitle>{detail.name}</DialogTitle><DialogDescription>{detail.category}{!detail.hasVariants && ` · ${formatCurrency(detail.price)}`}</DialogDescription></DialogHeader><p className="text-sm">{detail.description || 'No description.'}</p>{detail.hasVariants && <div className="space-y-2">{detail.variants?.map((variant) => <div key={variant.id} className="flex justify-between rounded-lg border p-2 text-sm"><span>{variant.name}{variant.isDefault ? ' · Default' : ''}</span><span>{formatCurrency(effectiveVariantPrice(variant))}</span></div>)}</div>}{!!detail.recipeLines?.length && <div className="space-y-1"><p className="text-sm font-medium">Recipe / stock</p>{detail.recipeLines.map((line) => <div key={line.id ?? line.inventoryItemId} className="flex justify-between rounded-lg border p-2 text-sm"><span>{line.inventoryItem?.name ?? line.inventoryItemId}</span><span>{line.quantity} {line.inventoryItem?.unit ?? ''}</span></div>)}</div>}<div className="flex flex-wrap gap-2"><Badge variant={detail.available ? 'success' : 'secondary'}>{detail.available ? 'Available' : 'Unavailable'}</Badge>{detail.popular && <Badge variant="warning">Popular</Badge>}{(detail.isVegetarian === true || detail.dietary === 'veg') && <Badge className="bg-emerald-600 text-white">Vegetarian</Badge>}{(detail.isVegetarian === false || detail.dietary === 'nonveg') && <Badge className="bg-rose-700 text-white">Non-vegetarian</Badge>}</div></>}</DialogContent>
         </Dialog>
 
         <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>

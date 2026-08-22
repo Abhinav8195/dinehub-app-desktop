@@ -39,7 +39,7 @@ export default function PinLoginPage() {
       const result = await authApi.pinLogin({
         staffLoginId: staffLoginId.trim(),
         pin,
-        deviceName: 'DineHub POS',
+        deviceName: 'DiningHub POS',
         deviceType: 'pos',
         deviceId
       })

@@ -291,9 +291,9 @@ export const LANGUAGES = [
 ]
 
 export const RESTAURANTS = [
-  { id: '1', name: 'DineHub Downtown', branches: 3 },
-  { id: '2', name: 'DineHub Marina', branches: 2 },
-  { id: '3', name: 'DineHub Airport', branches: 1 }
+  { id: '1', name: 'DiningHub Downtown', branches: 3 },
+  { id: '2', name: 'DiningHub Marina', branches: 2 },
+  { id: '3', name: 'DiningHub Airport', branches: 1 }
 ]
 
 export const BRANCHES = [

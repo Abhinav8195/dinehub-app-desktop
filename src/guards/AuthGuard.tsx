@@ -8,14 +8,14 @@ interface AuthGuardProps {
 }
 
 export function AuthGuard({ children }: AuthGuardProps) {
-  const { isAuthenticated, isInitialized, isLoading } = useAuth()
+  const { user, isAuthenticated, isInitialized, isLoading } = useAuth()
   const location = useLocation()
 
   if (!isInitialized || isLoading) {
     return <SplashScreen />
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !user) {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 

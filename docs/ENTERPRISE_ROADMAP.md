@@ -78,10 +78,10 @@ docker compose up -d          # PostgreSQL + Redis
 npm install
 npx prisma db push --accept-data-loss
 npm run prisma:seed
-npm run start:dev             # https://dininghub.in/api/v1
+npm run start:dev             # http://localhost:3000/api/v1
 ```
 
-Swagger: https://dininghub.in/docs
+Swagger: http://localhost:3000/docs
 
 ### Desktop
 

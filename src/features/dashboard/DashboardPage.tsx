@@ -51,7 +51,7 @@ export default function DashboardPage() {
     return (
       <PageShell>
         <div className="page-container">
-          <PageHeader title="DineHub" description="Choose an available module from the sidebar." />
+          <PageHeader title="DiningHub" description="Choose an available module from the sidebar." />
           <Card>
             <CardContent className="p-6 text-sm text-muted-foreground">
               Dashboard analytics are not included in your current plan.

@@ -1,9 +1,9 @@
 {
   "name": "dine-hub-desktop",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "Enterprise Restaurant & Cafe Management Desktop Application",
   "main": "out/main/index.js",
-  "author": "DineHub",
+  "author": "DiningHub",
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
@@ -85,8 +85,8 @@
   },
   "build": {
     "appId": "com.dinehub.desktop",
-    "productName": "DineHub",
-    "artifactName": "DineHub-${version}-${os}-${arch}.${ext}",
+    "productName": "DiningHub",
+    "artifactName": "DiningHub-${version}-${os}-${arch}.${ext}",
     "icon": "build/icon.png",
     "directories": {
       "output": "release"

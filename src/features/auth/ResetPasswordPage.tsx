@@ -50,7 +50,7 @@ export default function ResetPasswordPage() {
           <BrandLogo size="md" orientation="vertical" className="mx-auto mb-4" />
           <CardTitle>Choose a new password</CardTitle>
           <CardDescription>
-            {done ? 'Your password was updated.' : 'Enter a new password for your DineHub account.'}
+            {done ? 'Your password was updated.' : 'Enter a new password for your DiningHub account.'}
           </CardDescription>
         </CardHeader>
         <CardContent>

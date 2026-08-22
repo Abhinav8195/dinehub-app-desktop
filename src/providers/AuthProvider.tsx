@@ -34,9 +34,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error(error)
       }
     }
-    flush()
+    void flush()
     window.addEventListener('online', flush)
-    return () => window.removeEventListener('online', flush)
+    const timer = window.setInterval(() => void flush(), 30_000)
+    return () => {
+      window.removeEventListener('online', flush)
+      window.clearInterval(timer)
+    }
   }, [isAuthenticated])
 
   useEffect(() => {

@@ -1,7 +1,7 @@
 import axios, { type AxiosAdapter, type AxiosResponse } from 'axios'
 import { ApiError, type ApiErrorBody, type ApiResponse } from './types/common'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://dininghub.in/api/v1'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'
 
 type AuthEventCallback = () => void
 const authEventListeners = new Set<AuthEventCallback>()
@@ -43,7 +43,7 @@ interface BridgeResult {
 const electronAdapter: AxiosAdapter = async (config) => {
   const bridge = getElectronAPI()
   if (!bridge) {
-    throw new ApiError({ success: false, statusCode: 0, message: 'DineHub desktop bridge is unavailable' })
+    throw new ApiError({ success: false, statusCode: 0, message: 'DiningHub desktop bridge is unavailable' })
   }
   let rawData = config.data
   if (typeof config.data === 'string') {
@@ -75,7 +75,13 @@ const electronAdapter: AxiosAdapter = async (config) => {
       errors: result.error?.errors,
       path: result.error?.path
     })
-    if (error.statusCode === 401) notifyAuthExpired()
+    // Only end the app session when credentials are actually gone (refresh failed).
+    // Permission / route 401s must not force logout — that was kicking users out mid-shift.
+    // 403 after tenant suspend also clears tokens in the main process refresh path.
+    if (error.statusCode === 401 || error.statusCode === 403) {
+      const stillSignedIn = await tokenBridge.hasSession().catch(() => false)
+      if (!stillSignedIn) notifyAuthExpired()
+    }
     throw error
   }
   const response = result.response ?? (Object.prototype.hasOwnProperty.call(result, 'payload') ? {
@@ -122,12 +128,10 @@ export async function checkOnline(): Promise<boolean> {
     await apiClient.get('/tenants/plans')
     return true
   } catch (error) {
-    // Only consider it "online" if we got a successful HTTP response (2xx)
-    // or a network-level failure (statusCode === 0 means no response received).
-    // Auth failures (401/403) and server errors (5xx) should not be treated as "online"
-    // for the purpose of the offline banner.
+    // Any HTTP response (even 401/403/5xx) means the API host is reachable.
+    // statusCode 0 = no response / network failure → offline.
     if (error instanceof ApiError) {
-      return error.statusCode === 0
+      return error.statusCode > 0
     }
     return false
   }

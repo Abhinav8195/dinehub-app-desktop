@@ -3,14 +3,14 @@ import logoMark from '../../public/logo-mark.png'
 import logoFull from '../../public/logo.png'
 
 export const BRAND = {
-  name: 'DineHub',
+  name: 'DiningHub',
   tagline: 'Restaurant POS & ERP',
   version: packageJson.version,
   // Import the images so Vite includes them in the renderer bundle. This keeps
   // the URLs valid when the packaged app is loaded from an ASAR via file://.
   logo: logoMark,
   logoFull,
-  logoAlt: 'DineHub logo',
+  logoAlt: 'DiningHub logo',
   colors: {
     primary: '#FFC107',
     primaryHover: '#FFB300',
@@ -23,7 +23,7 @@ export const BRAND = {
   },
   urls: {
     menu: 'https://menu.dininghub.in',
-    website: 'https://dininghub.in'
+    website: 'http://localhost:3000'
   }
 } as const
 

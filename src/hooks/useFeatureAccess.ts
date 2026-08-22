@@ -1,6 +1,7 @@
 import { useAuthStore } from '@/store/authStore'
 
 export function useFeatureAccess() {
+  const user = useAuthStore((state) => state.user)
   const features = useAuthStore((state) => state.features)
   const status = useAuthStore((state) => state.featuresStatus)
   const error = useAuthStore((state) => state.featuresError)
@@ -13,7 +14,8 @@ export function useFeatureAccess() {
     features,
     status,
     error,
-    isLoading: status === 'idle' || status === 'loading',
+    // Without a user, never treat "idle" as infinite loading (splash hang).
+    isLoading: Boolean(user) && (status === 'idle' || status === 'loading'),
     isError: status === 'error',
     hasFeature,
     hasAnyFeature,

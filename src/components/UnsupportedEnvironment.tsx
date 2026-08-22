@@ -7,10 +7,10 @@ export function UnsupportedEnvironment() {
       <Card className="max-w-lg">
         <CardHeader>
           <MonitorX className="h-10 w-10 text-primary mb-2" aria-hidden="true" />
-          <CardTitle>DineHub Desktop requires Electron</CardTitle>
+          <CardTitle>DiningHub Desktop requires Electron</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
-          <p>DineHub Desktop must be launched through Electron.</p>
+          <p>DiningHub Desktop must be launched through Electron.</p>
           <p>Run <code className="rounded bg-muted px-1.5 py-1 text-foreground">npm run dev</code> for development.</p>
         </CardContent>
       </Card>

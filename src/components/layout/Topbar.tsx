@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
 import { useQuery } from '@tanstack/react-query'
 import {
-  Bell, ChevronDown, Moon, Search, Sun,
-  Plus, Lock, Clock, Radio
+  Bell, ChevronDown, Moon, Sun,
+  Plus, Lock, Clock, Radio, Printer, Wifi, WifiOff
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getSocketConnectionState, onSocketConnectionState } from '@/lib/socket'
@@ -19,8 +19,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { Breadcrumb } from '@/components/common/Breadcrumb'
 import { AppUpdateButton } from '@/components/common/AppUpdateButton'
-import { setRestaurant, setBranch, toggleDarkMode } from '@/store/slices/appSlice'
+import { setRestaurant, setBranch, setPrinterConnected, toggleDarkMode } from '@/store/slices/appSlice'
 import { useAuth } from '@/hooks/useAuth'
+import { useOnlineStatus } from '@/hooks/useOnlineStatus'
+import { usePrinterStatus } from '@/hooks/usePrinterStatus'
 import { useShiftStore } from '@/store/shiftStore'
 import { APP_BASE } from '@/constants/navigation'
 import { getInitials } from '@/lib/utils'
@@ -41,6 +43,8 @@ export function Topbar({ onCloseShift }: TopbarProps) {
   const currentShift = useShiftStore((s) => s.currentShift)
   const lockScreen = useShiftStore((s) => s.lockScreen)
   const { unreadCount } = useSelector((s: RootState) => s.notifications)
+  const { isOffline, isOnline } = useOnlineStatus()
+  const printer = usePrinterStatus()
 
   const isSuperAdmin = Boolean(user?.isSuperAdmin)
   const { data: tenantsResult } = useQuery({
@@ -53,6 +57,9 @@ export function Topbar({ onCloseShift }: TopbarProps) {
   const branchList = branches as Array<{ id: string; name: string; isDefault?: boolean }>
   const [socketState, setSocketState] = useState(getSocketConnectionState())
   useEffect(() => onSocketConnectionState(setSocketState), [])
+  useEffect(() => {
+    dispatch(setPrinterConnected(printer.connected))
+  }, [dispatch, printer.connected])
   useEffect(() => {
     if (isSuperAdmin && !selectedRestaurantId && restaurants[0]) dispatch(setRestaurant(restaurants[0].id))
     const selectedStillValid = Boolean(selectedBranchId && branchList.some((b) => String(b.id) === selectedBranchId))
@@ -88,7 +95,45 @@ export function Topbar({ onCloseShift }: TopbarProps) {
         <div className="flex items-center gap-2">
           <div className="hidden lg:flex items-center gap-1.5 mr-2">
             <Tooltip>
-              <TooltipTrigger>
+              <TooltipTrigger asChild>
+                <div
+                  className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${isOffline ? 'text-danger' : 'text-success'}`}
+                  aria-label={isOffline ? 'Network offline' : 'Network online'}
+                >
+                  {isOffline ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isOffline ? 'Offline — API unreachable' : isOnline ? 'Online' : 'Reconnecting…'}
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div
+                  className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${
+                    printer.status === 'connected'
+                      ? 'text-success'
+                      : printer.status === 'checking'
+                        ? 'text-warning'
+                        : 'text-muted-foreground'
+                  }`}
+                  aria-label={printer.connected ? 'Printer connected' : 'Printer offline'}
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                {printer.status === 'checking'
+                  ? 'Checking printer…'
+                  : printer.connected
+                    ? `Printer connected · ${printer.printerName}`
+                    : 'Printer offline — connect a printer to this PC'}
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <div className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${socketState === 'connected' ? 'text-success' : socketState === 'connecting' ? 'text-warning' : 'text-muted-foreground'}`}>
                   <Radio className="h-3.5 w-3.5" />
                 </div>

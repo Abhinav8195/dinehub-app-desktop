@@ -16,8 +16,17 @@ installBrowserBridge()
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 5 * 60 * 1000, retry: 1, refetchOnWindowFocus: false }
-  }
+    queries: {
+      // Soft navigation must always refresh — a 5-minute stale cache made pages
+      // (Inventory, etc.) look empty until a hard refresh.
+      staleTime: 0,
+      gcTime: 5 * 60 * 1000,
+      retry: 1,
+      refetchOnMount: 'always',
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+    },
+  },
 })
 
 function ThemeInitializer({ children }: { children: React.ReactNode }) {

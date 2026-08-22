@@ -129,7 +129,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true })
     try {
       const deviceId = await tokenBridge.getDeviceId()
-      const appName = import.meta.env.VITE_APP_NAME || 'DineHub Desktop'
+      const appName = import.meta.env.VITE_APP_NAME || 'DiningHub Desktop'
 
       const result = await authApi.login({
         email,
@@ -173,9 +173,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const hasSession = await tokenBridge.hasSession()
       if (hasSession) {
-        // Restore the local session immediately. The access token is refreshed
-        // transparently by the main process if the API reports it as expired.
-        set({ isAuthenticated: true })
         try {
           const user = await authApi.me()
           set({ user, isAuthenticated: true })
@@ -184,16 +181,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           const sessionRejected = error instanceof ApiError &&
             (error.statusCode === 401 || error.statusCode === 403)
           if (sessionRejected) {
-            await tokenBridge.clearTokens()
+            // Access/refresh rejected — force login. Never stay "authenticated" without a user
+            // (that left FeatureAccessBoundary stuck on the splash forever).
+            await tokenBridge.clearTokens().catch(() => {})
             set({ user: null, isAuthenticated: false, features: {}, featuresStatus: 'idle', featuresError: null })
+          } else {
+            // Offline / temporary server failure: keep tokens, mark signed-in so app can use cache.
+            set({ isAuthenticated: true })
           }
-          // For offline, gateway, and temporary server failures, retain the
-          // stored session and retry naturally on the next API request.
         }
+      } else {
+        set({ user: null, isAuthenticated: false })
       }
     } catch {
-      // A bridge/storage failure cannot safely establish a local session, but
-      // it must not erase credentials that may still be recoverable next run.
       set({ user: null, isAuthenticated: false })
     } finally {
       set({ isLoading: false, isInitialized: true })
@@ -201,9 +201,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   }
 }))
 
-// Listen for 401 refresh failures
+// Listen for confirmed session death (refresh failed / tokens cleared)
 onAuthExpired(() => {
   import('@/api/settings.api').then(({ clearRestaurantSettingsCache }) => clearRestaurantSettingsCache()).catch(() => {})
+  void tokenBridge.clearTokens().catch(() => {})
   useAuthStore.getState().setUser(null)
   useAuthStore.setState({ isAuthenticated: false, features: {}, featuresStatus: 'idle', featuresError: null })
 })

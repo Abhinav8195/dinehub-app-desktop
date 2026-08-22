@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useSelector } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis } from 'recharts'
 import { BadgePercent, Ban, CircleDollarSign, Receipt, RefreshCw, RotateCcw, ShoppingBag, TrendingUp, UserPlus, Users } from 'lucide-react'
@@ -19,7 +18,6 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CHART_COLORS } from '@/constants/brand'
 import { formatCurrency, formatDateTime, formatPercent, formatRelativeTime } from '@/lib/utils'
-import type { RootState } from '@/store'
 import { getDateRange, labelize, normalize, previousRange, toLocalYmd, type DatePreset } from '@/features/orders/order-utils'
 import { OrderStatusBadge } from '@/features/orders/components/OrderStatusBadge'
 import { aggregateSales, groupRevenue, hourlyOrders, itemRankings, percentChange, salesSeries } from '@/features/orders/sales-utils'
@@ -28,11 +26,11 @@ const COLORS = [CHART_COLORS.primary, CHART_COLORS.success, '#f59e0b', '#6366f1'
 
 export default function AnalyticsPage() {
   const navigate = useNavigate()
-  const selectedBranchId = useSelector((state: RootState) => state.app.selectedBranchId)
   const [period, setPeriod] = useState<DatePreset>('last7')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
-  const [branchId, setBranchId] = useState(selectedBranchId || 'all')
+  // Default all branches — topbar branch must not hide QR / unmatched-branch sales
+  const [branchId, setBranchId] = useState('all')
   const range = useMemo(() => getDateRange(period, new Date(), fromDate, toDate), [period, fromDate, toDate])
   const prior = useMemo(() => previousRange(range.from, range.to), [range])
   const baseParams = { branchId: branchId === 'all' ? undefined : branchId, limit: 100, sortBy: 'createdAt', sortOrder: 'desc' as const }
@@ -47,6 +45,8 @@ export default function AnalyticsPage() {
       toDate: period === 'custom' ? toDate || undefined : undefined,
     }, signal),
     enabled: period !== 'custom' || Boolean(fromDate && toDate),
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
   const previousQuery = useQuery({
     queryKey: ['orders', 'sales-previous', prior, branchId],
@@ -59,28 +59,28 @@ export default function AnalyticsPage() {
       toDate: toLocalYmd(prior.to),
     }, signal),
     enabled: Boolean(prior.from && prior.to),
+    staleTime: 0,
   })
   const { data: branches = [] } = useQuery({ queryKey: ['branches'], queryFn: branchesApi.list })
   const orders = useMemo(() => {
     const rows = currentQuery.data?.orders ?? []
-    if (!range.from && !range.to) return rows
-    const fromMs = range.from ? new Date(range.from).getTime() : undefined
-    const toMs = range.to ? new Date(range.to).getTime() : undefined
+    // Server already applies period. Only re-apply for custom ranges / branch safety.
+    if (period !== 'custom' && branchId === 'all') return rows
+    const fromMs = period === 'custom' && range.from ? new Date(range.from).getTime() : undefined
+    const toMs = period === 'custom' && range.to ? new Date(range.to).getTime() : undefined
     return rows.filter((order) => {
+      if (branchId !== 'all' && order.branchId && order.branchId !== branchId) return false
       const created = new Date(order.createdAt).getTime()
-      return (fromMs === undefined || created >= fromMs) && (toMs === undefined || created <= toMs)
+      if (fromMs !== undefined && created < fromMs) return false
+      if (toMs !== undefined && created > toMs) return false
+      return true
     })
-  }, [currentQuery.data?.orders, range.from, range.to])
+  }, [currentQuery.data?.orders, period, range.from, range.to, branchId])
   const previousOrders = useMemo(() => {
     const rows = previousQuery.data?.orders ?? []
-    if (!prior.from && !prior.to) return rows
-    const fromMs = prior.from ? new Date(prior.from).getTime() : undefined
-    const toMs = prior.to ? new Date(prior.to).getTime() : undefined
-    return rows.filter((order) => {
-      const created = new Date(order.createdAt).getTime()
-      return (fromMs === undefined || created >= fromMs) && (toMs === undefined || created <= toMs)
-    })
-  }, [previousQuery.data?.orders, prior.from, prior.to])
+    if (branchId === 'all') return rows
+    return rows.filter((order) => !order.branchId || order.branchId === branchId)
+  }, [previousQuery.data?.orders, branchId])
   const metrics = useMemo(() => aggregateSales(orders), [orders])
   const previousMetrics = useMemo(() => aggregateSales(previousOrders), [previousOrders])
   const series = useMemo(() => salesSeries(orders), [orders])

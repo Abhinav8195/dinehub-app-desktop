@@ -26,7 +26,6 @@ export function useOnlineStatus() {
     return () => clearInterval(interval)
   }, [isOnline])
 
-  // The desktop app can use a local API even when Chromium reports that the
-  // machine has no public internet connection. API reachability is authoritative.
+  // API reachability is authoritative (local API can work without public internet).
   return { isOnline, isApiReachable, isOffline: !isApiReachable }
 }

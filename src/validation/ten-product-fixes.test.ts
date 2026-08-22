@@ -31,14 +31,16 @@ function attachedMenuItemIds(
 /** Mirrors backend order.create paymentStatus rule. */
 function paymentStatusForMethod(paymentMethod?: string | null): 'PAID' | 'PENDING' {
   if (!paymentMethod) return 'PENDING'
-  const method = String(paymentMethod).toUpperCase()
-  return method === 'CASH' || method === 'CARD' ? 'PAID' : 'PENDING'
+  return 'PAID'
 }
 
 describe('10 product fixes — source + logic validation', () => {
-  it('1. Topbar no longer shows fake wifi/printer/cash status icons', () => {
+  it('1. Topbar shows live network and printer status (not fake cash icons)', () => {
     const topbar = read('src/components/layout/Topbar.tsx')
-    expect(topbar).not.toMatch(/\bWifi\b|\bWifiOff\b|\bPrinter\b|CircleDollarSign/)
+    expect(topbar).not.toMatch(/CircleDollarSign/)
+    expect(topbar).toContain('usePrinterStatus')
+    expect(topbar).toContain('useOnlineStatus')
+    expect(topbar).toContain('Printer connected')
     expect(topbar).toContain('Realtime')
   })
 
@@ -144,22 +146,25 @@ describe('10 product fixes — source + logic validation', () => {
     expect(posPage).not.toContain('resumeOrder(heldOrders[0].id)')
   })
 
-  it('10. Checkout labels are payment methods and cash/card mark order paid', () => {
+  it('10. Checkout supports cash/card/upi/split and tender marks order paid', () => {
     const checkout = read('src/features/pos/components/CheckoutModal.tsx')
-    expect(checkout).toContain('Pay with Cash')
-    expect(checkout).toContain('Pay with Card')
+    expect(checkout).toContain("'CASH'")
+    expect(checkout).toContain("'CARD'")
+    expect(checkout).toContain("'UPI'")
+    expect(checkout).toContain("'SPLIT'")
+    expect(checkout).toContain('Collect')
     expect(checkout).not.toContain('Order Now')
 
     expect(paymentStatusForMethod('CASH')).toBe('PAID')
     expect(paymentStatusForMethod('CARD')).toBe('PAID')
-    expect(paymentStatusForMethod('UPI')).toBe('PENDING')
+    expect(paymentStatusForMethod('UPI')).toBe('PAID')
     expect(paymentStatusForMethod(undefined)).toBe('PENDING')
 
     const orderService = readFileSync(
       resolve(root, '../dinehub-backend/src/modules/pos/services/order.service.ts'),
       'utf8'
     )
-    expect(orderService).toContain("paymentStatus: dto.paymentMethod")
+    expect(orderService).toContain('paymentStatus: dto.paymentMethod')
     expect(orderService).toContain("'PAID'")
   })
 })

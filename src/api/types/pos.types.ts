@@ -50,6 +50,12 @@ export interface MenuItemDto {
   imageUrl?: string | null
   available: boolean
   popular: boolean
+  isVegetarian?: boolean | null
+  dietary?: 'veg' | 'nonveg' | null
+  /** Optional staff short code / SKU when provided by API */
+  sku?: string | null
+  shortCode?: string | null
+  barcode?: string | null
   modifierGroups: import('./catalog.types').ModifierGroup[]
   hasVariants?: boolean
   variants?: import('./menu.types').MenuItemVariant[]

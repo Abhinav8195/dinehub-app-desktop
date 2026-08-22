@@ -25,6 +25,27 @@ export interface UpdateCategoryBody {
   imageUrl?: string
 }
 
+export interface MenuItemRecipeLine {
+  id?: string
+  inventoryItemId: string
+  quantity: number
+  variantId?: string | null
+  inventoryItem?: {
+    id: string
+    name: string
+    sku: string
+    unit: string
+    quantity: number
+    warehouseId: string
+  }
+}
+
+export interface MenuItemRecipeLineInput {
+  inventoryItemId: string
+  quantity: number
+  variantId?: string | null
+}
+
 export interface MenuItem {
   id: string
   name: string
@@ -40,6 +61,7 @@ export interface MenuItem {
   modifierGroups: ModifierGroup[]
   hasVariants?: boolean
   variants?: MenuItemVariant[]
+  recipeLines?: MenuItemRecipeLine[]
 }
 
 export interface MenuItemVariant {
@@ -73,6 +95,7 @@ export interface CreateMenuItemBody {
   isVegetarian?: boolean | null
   hasVariants?: boolean
   variants?: MenuItemVariantInput[]
+  recipeLines?: MenuItemRecipeLineInput[]
 }
 
 export interface UpdateMenuItemBody {
@@ -86,6 +109,7 @@ export interface UpdateMenuItemBody {
   isVegetarian?: boolean | null
   hasVariants?: boolean
   variants?: MenuItemVariantInput[]
+  recipeLines?: MenuItemRecipeLineInput[]
 }
 
 export interface BulkAvailabilityBody {

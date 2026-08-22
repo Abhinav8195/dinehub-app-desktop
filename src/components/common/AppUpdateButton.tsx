@@ -17,7 +17,7 @@ export function AppUpdateButton() {
   const check = async () => {
     const next = await window.electronAPI.updates.check()
     setStatus(next)
-    if (next.state === 'not-available') toast.success(`DineHub ${next.currentVersion} is up to date`)
+    if (next.state === 'not-available') toast.success(`DiningHub ${next.currentVersion} is up to date`)
     if (next.state === 'error') toast.error(next.message || 'Unable to check for updates')
   }
 
@@ -35,7 +35,7 @@ export function AppUpdateButton() {
   const tooltip = status?.state === 'error'
     ? status.message || 'Update check failed'
     : downloaded
-      ? `DineHub ${status.version} is ready to install`
+      ? `DiningHub ${status.version} is ready to install`
       : `Current version: ${status?.currentVersion ?? 'unknown'}`
 
   return (

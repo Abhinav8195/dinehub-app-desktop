@@ -1,15 +1,15 @@
-# DineHub Desktop — Restaurant ERP + POS
+# DiningHub Desktop — Restaurant ERP + POS
 
-Enterprise Electron desktop app integrated with the **DineHub REST API**.
+Enterprise Electron desktop app integrated with the **DiningHub REST API**.
 
 ## API Integration
 
 | Environment | Base URL |
 |-------------|----------|
-| Development | `https://dininghub.in/api/v1` |
+| Development | `http://localhost:3000/api/v1` |
 | Production  | `https://api.dinehub.app/api/v1` |
 
-Swagger docs: https://dininghub.in/docs
+Swagger docs: http://localhost:3000/docs
 
 ### Dev Credentials
 
@@ -21,7 +21,7 @@ Swagger docs: https://dininghub.in/docs
 ## Quick Start
 
 ```bash
-# 1. Start the DineHub API backend on port 3000
+# 1. Start the DiningHub API backend on port 3000
 # 2. Install & run desktop app
 npm install
 npm run dev
@@ -109,9 +109,9 @@ npm run dist:linux   # Linux AppImage/deb
 See `.env.development` and `.env.production`:
 
 ```
-VITE_API_URL=https://dininghub.in/api/v1
-VITE_SOCKET_URL=https://dininghub.in
-VITE_APP_NAME=DineHub POS
+VITE_API_URL=http://localhost:3000/api/v1
+VITE_SOCKET_URL=http://localhost:3000
+VITE_APP_NAME=DiningHub
 ```
 
 ## Socket.io (prepared)

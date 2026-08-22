@@ -219,8 +219,35 @@ export async function processSyncQueue(
 }
 
 export async function flushOfflineQueue(): Promise<number> {
-  if (!navigator.onLine) return 0
+  // Prefer a real API ping over navigator.onLine (desktop can be "offline" to WAN
+  // but still reach the restaurant API — or the reverse).
+  try {
+    const { checkOnline } = await import('@/api/client')
+    const reachable = await checkOnline()
+    if (!reachable && !navigator.onLine) return 0
+  } catch {
+    if (!navigator.onLine) return 0
+  }
   return processSyncQueue()
+}
+
+/** Fetch online and seed IndexedDB; on network failure return last cached value. */
+export async function withOfflineCache<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  try {
+    const data = await fetcher()
+    await cacheSet(key, data).catch(() => {})
+    return data
+  } catch (error) {
+    const cached = await cacheGet<T>(key).catch(() => null)
+    if (cached != null) return cached
+    throw error
+  }
+}
+
+export function isNetworkFailure(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const status = (error as { statusCode?: number }).statusCode
+  return status === 0 || !navigator.onLine
 }
 
 export async function getSyncQueueStatus(): Promise<{ pending: number; failed: number; oldestItem?: string }> {

@@ -62,7 +62,7 @@ export function NoFeaturesEnabled() {
         <CardHeader><CardTitle>No features enabled</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Contact your DineHub administrator to enable features for this restaurant.
+            Contact your DiningHub administrator to enable features for this restaurant.
           </p>
           <Button variant="outline" onClick={() => void signOut()}><LogOut className="mr-2 h-4 w-4" /> Logout</Button>
         </CardContent>

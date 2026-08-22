@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ColumnDef } from '@tanstack/react-table'
@@ -25,6 +25,7 @@ import { APP_BASE } from '@/constants/navigation'
 import { inventoryApi } from '@/api/inventory.api'
 import { mapBackendError } from '@/api/management-utils'
 import { formatCurrency } from '@/lib/utils'
+import { INVENTORY_UNITS } from '@/constants/inventory-units'
 import { FeatureGate } from '@/guards/FeatureGate'
 
 interface WarehouseDto {
@@ -110,25 +111,31 @@ export default function InventoryPage() {
   const [form, setForm] = useState({
     name: '',
     sku: '',
-    unit: 'kg',
+    unit: 'g',
     minStock: 10,
+    openingQuantity: 0,
+    reorderQuantity: 0,
     warehouseId: '',
     costPerUnit: 0,
     itemType: 'RAW',
   })
 
-  const { data: items = [], isLoading } = useQuery({
+  const { data: items = [], isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: ['inventory', 'items', location.pathname],
     queryFn: async () => (await inventoryApi.listItems({
       ...(location.pathname.endsWith('/materials') ? { itemType: 'RAW' } : {}),
       ...(location.pathname.endsWith('/goods') ? { itemType: 'FINISHED' } : {}),
       limit: 100,
     })).data as InventoryItemDto[],
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
 
   const { data: warehouses = [] } = useQuery({
     queryKey: ['inventory', 'warehouses'],
     queryFn: () => inventoryApi.listWarehouses() as Promise<WarehouseDto[]>,
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
 
   const { data: logs = [] } = useQuery({
@@ -137,16 +144,24 @@ export default function InventoryPage() {
       id: log.id, type: log.type, quantity: log.quantityChange, notes: log.notes,
       createdAt: log.createdAt, inventoryItem: log.inventoryItem,
     })),
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
+
+  // Force a fresh pull whenever this inventory route is opened / tab changes
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: ['inventory'] })
+  }, [location.pathname, queryClient])
 
   const createItem = useMutation({
     mutationFn: () =>
       inventoryApi.createItem({
-        name: form.name,
-        sku: form.sku,
+        name: form.name.trim(),
+        sku: form.sku.trim(),
         unit: form.unit,
         minStock: form.minStock,
-        openingQuantity: 0,
+        openingQuantity: form.openingQuantity,
+        reorderQuantity: form.reorderQuantity || Math.max(form.minStock, 0),
         warehouseId: form.warehouseId,
         costPerUnit: form.costPerUnit,
         itemType: form.itemType as 'RAW' | 'FINISHED',
@@ -154,11 +169,19 @@ export default function InventoryPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] })
-      toast.success('Inventory item added')
+      toast.success(
+        form.openingQuantity > 0
+          ? `Item added with opening stock ${form.openingQuantity} ${form.unit}`
+          : 'Inventory item added — link it to menu recipes for auto deduct',
+      )
       setAddOpen(false)
-      setForm({ name: '', sku: '', unit: 'kg', minStock: 10, warehouseId: '', costPerUnit: 0, itemType: 'RAW' })
+      setForm({
+        name: '', sku: '', unit: 'g', minStock: 10, openingQuantity: 0, reorderQuantity: 0,
+        warehouseId: warehouses.find((w) => w.isDefault)?.id || warehouses[0]?.id || '',
+        costPerUnit: 0, itemType: 'RAW',
+      })
     },
-    onError: () => toast.error('Failed to add item'),
+    onError: (error) => toast.error(mapBackendError(error).message || 'Failed to add item'),
   })
   const saveWarehouse = useMutation({
     mutationFn: () => {
@@ -317,7 +340,11 @@ export default function InventoryPage() {
   })
 
   return (
-    <PageShell isLoading={isLoading}>
+    <PageShell
+      isLoading={isLoading || (isFetching && items.length === 0)}
+      isError={isError}
+      onRetry={() => void refetch()}
+    >
       <div className="page-container">
         <PageHeader
           title="Inventory Management"
@@ -326,7 +353,15 @@ export default function InventoryPage() {
             <>
               <Button variant="outline" onClick={exportInventory}><Download className="h-4 w-4 mr-2" /> Export</Button>
               <Button variant="outline"><QrCode className="h-4 w-4 mr-2" /> Scan Barcode</Button>
-              <Button onClick={() => setAddOpen(true)}><Plus className="h-4 w-4 mr-2" /> Add Item</Button>
+              <Button onClick={() => {
+                const defaultWh = warehouses.find((w) => w.isDefault)?.id || warehouses[0]?.id || ''
+                setForm((f) => ({
+                  ...f,
+                  warehouseId: f.warehouseId || defaultWh,
+                  openingQuantity: f.openingQuantity || 0,
+                }))
+                setAddOpen(true)
+              }}><Plus className="h-4 w-4 mr-2" /> Add Item</Button>
             </>
           }
         />
@@ -351,6 +386,17 @@ export default function InventoryPage() {
           </TabsList>
 
           <TabsContent value="dashboard" className="mt-4 space-y-6">
+            <Card className="border-primary/20 bg-primary/5">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Automation is on</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground space-y-1">
+                <p>1. Add stock items with opening qty + min stock.</p>
+                <p>2. Link each menu dish under <strong>Stock items (recipe)</strong>.</p>
+                <p>3. POS cash/card sale auto-deducts recipe qty and raises low-stock alerts.</p>
+                <p>4. Cancel, refund, or delete a paid order restores stock.</p>
+              </CardContent>
+            </Card>
             {lowStock.length > 0 && (
               <Card className="border-warning/30 bg-warning/5">
                 <CardHeader className="pb-2">
@@ -660,9 +706,13 @@ export default function InventoryPage() {
                 <div className="space-y-2"><Label>SKU</Label><Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} /></div>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-2"><Label>Unit</Label><Input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} /></div>
-                <div className="space-y-2"><Label>Min Stock</Label><Input type="number" value={form.minStock} onChange={(e) => setForm({ ...form, minStock: +e.target.value })} /></div>
-                <div className="space-y-2"><Label>Unit Cost</Label><Input type="number" value={form.costPerUnit} onChange={(e) => setForm({ ...form, costPerUnit: +e.target.value })} /></div>
+                <div className="space-y-2"><Label>Unit</Label><Select value={form.unit} onValueChange={(unit) => setForm({ ...form, unit })}><SelectTrigger><SelectValue placeholder="g / kg / pcs" /></SelectTrigger><SelectContent>{INVENTORY_UNITS.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}</SelectContent></Select><p className="text-[11px] text-muted-foreground">g/ml for recipes, pcs for pieces.</p></div>
+                <div className="space-y-2"><Label>Opening stock</Label><Input type="number" min={0} step="0.001" value={form.openingQuantity} onChange={(e) => setForm({ ...form, openingQuantity: Number(e.target.value) })} /><p className="text-[11px] text-muted-foreground">Qty in stock now ({form.unit})</p></div>
+                <div className="space-y-2"><Label>Min stock alert</Label><Input type="number" min={0} value={form.minStock} onChange={(e) => setForm({ ...form, minStock: +e.target.value })} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2"><Label>Unit cost</Label><Input type="number" min={0} step="0.01" value={form.costPerUnit} onChange={(e) => setForm({ ...form, costPerUnit: +e.target.value })} /></div>
+                <div className="space-y-2"><Label>Reorder qty</Label><Input type="number" min={0} value={form.reorderQuantity} onChange={(e) => setForm({ ...form, reorderQuantity: +e.target.value })} /><p className="text-[11px] text-muted-foreground">Suggested buy qty when low</p></div>
               </div>
               <div className="space-y-2">
                 <Label>Warehouse</Label>
@@ -670,7 +720,7 @@ export default function InventoryPage() {
                   <SelectTrigger><SelectValue placeholder="Select warehouse" /></SelectTrigger>
                   <SelectContent>
                     {warehouses.map((w) => (
-                      <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                      <SelectItem key={w.id} value={w.id}>{w.name}{w.isDefault ? ' · Default' : ''}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -679,9 +729,12 @@ export default function InventoryPage() {
                 <Label>Item Type</Label>
                 <Select value={form.itemType} onValueChange={(itemType) => setForm({ ...form, itemType })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="RAW">Raw material</SelectItem><SelectItem value="FINISHED">Finished good</SelectItem></SelectContent>
+                  <SelectContent><SelectItem value="RAW">Raw material (for recipes)</SelectItem><SelectItem value="FINISHED">Finished good</SelectItem></SelectContent>
                 </Select>
               </div>
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                Smart tip: after adding, open Menu → item → <strong>Stock items (recipe)</strong> and set how much {form.unit || 'qty'} is used per sale. Stock auto-deducts when order is completed.
+              </p>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>

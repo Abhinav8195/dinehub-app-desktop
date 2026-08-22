@@ -5,7 +5,7 @@ import type {
   MenuItem, MenuItemVariant, MenuItemVariantInput, UpdateCategoryBody, UpdateMenuItemBody
 } from './types/menu.types'
 
-const apiBaseUrl = import.meta.env.VITE_API_URL || 'https://dininghub.in/api/v1'
+const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'
 const serverOrigin = new URL(apiBaseUrl).origin
 
 export function resolveMenuImageUrl(imageUrl: string | null | undefined): string | null {
@@ -25,6 +25,7 @@ const mapMenuItem = (item: MenuItem): MenuItem => ({
   isVegetarian: item.isVegetarian ?? (item.dietary === 'veg' ? true : item.dietary === 'nonveg' ? false : null),
   dietary: item.dietary ?? (item.isVegetarian === true ? 'veg' : item.isVegetarian === false ? 'nonveg' : null),
   modifierGroups: item.modifierGroups ?? [],
+  recipeLines: item.recipeLines ?? [],
   ...(item.hasVariants !== undefined || item.variants !== undefined ? {
     hasVariants: item.hasVariants ?? Boolean(item.variants?.length),
     variants: (item.variants ?? []).slice().sort((a, b) => a.sortOrder - b.sortOrder)
@@ -38,6 +39,7 @@ function itemWriteBody(body: CreateMenuItemBody | UpdateMenuItemBody, { allowVar
     ...rest,
     isAvailable: body.isAvailable,
     isPopular: body.isPopular,
+    ...(body.recipeLines !== undefined ? { recipeLines: body.recipeLines } : {}),
     ...(allowVariants && body.hasVariants && variants?.length ? { variants } : {}),
   }
 }

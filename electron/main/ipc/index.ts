@@ -24,7 +24,7 @@ export function registerIpcHandlers(): void {
         ok: false,
         error: {
           statusCode: failure.statusCode ?? 0,
-          message: failure.message ?? 'Unable to reach DineHub',
+          message: failure.message ?? 'Unable to reach DiningHub',
           errors: failure.errors,
           path: failure.path
         }
@@ -115,7 +115,7 @@ export function registerIpcHandlers(): void {
       width: 1280,
       height: 800,
       fullscreen,
-      title: `DineHub ${hash === '/pos' ? 'POS' : 'Kitchen'}`,
+      title: `DiningHub ${hash === '/pos' ? 'POS' : 'Kitchen'}`,
       ...(process.platform === 'darwin' ? {} : { icon: appIcon }),
       webPreferences: {
         preload: join(__dirname, '../../preload/index.js'),
@@ -162,10 +162,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('notify:show', (_, title: string, body: string) => {
     if (!Notification.isSupported()) return false
     const notification = new Notification({
-      title: title.trim() || 'DineHub',
+      title: title.trim() || 'DiningHub',
       body,
       icon: appIcon,
-      appName: 'DineHub'
+      appName: 'DiningHub'
     })
     notification.on('click', () => {
       const win = getMainWindow()

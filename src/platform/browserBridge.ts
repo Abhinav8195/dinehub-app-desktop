@@ -1,7 +1,31 @@
-const API_BASE = (import.meta.env.VITE_API_URL || 'https://dininghub.in/api/v1').replace(/\/$/, '')
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1').replace(/\/$/, '')
 const ACCESS = 'dinehub.web.access'
 const REFRESH = 'dinehub.web.refresh'
+const TENANT = 'dinehub.web.tenant'
 const DEVICE = 'dinehub.web.device'
+
+/** Persist login until explicit logout (sessionStorage cleared on tab close). */
+const authStorage = {
+  get: (key: string) => {
+    try {
+      return localStorage.getItem(key) ?? sessionStorage.getItem(key)
+    } catch {
+      return null
+    }
+  },
+  set: (key: string, value: string) => {
+    try {
+      localStorage.setItem(key, value)
+      sessionStorage.removeItem(key)
+    } catch {
+      try { sessionStorage.setItem(key, value) } catch { /* ignore */ }
+    }
+  },
+  remove: (key: string) => {
+    try { localStorage.removeItem(key) } catch { /* ignore */ }
+    try { sessionStorage.removeItem(key) } catch { /* ignore */ }
+  },
+}
 
 function deviceId() {
   let id = localStorage.getItem(DEVICE)
@@ -13,9 +37,14 @@ function tokensFrom(data: unknown) {
   const value = data as { data?: { tokens?: { accessToken?: string; refreshToken?: string } } }
   const tokens = value?.data?.tokens
   if (tokens?.accessToken && tokens.refreshToken) {
-    sessionStorage.setItem(ACCESS, tokens.accessToken)
-    sessionStorage.setItem(REFRESH, tokens.refreshToken)
+    authStorage.set(ACCESS, tokens.accessToken)
+    authStorage.set(REFRESH, tokens.refreshToken)
   }
+}
+
+function clearAuthTokens() {
+  authStorage.remove(ACCESS)
+  authStorage.remove(REFRESH)
 }
 
 async function parse(response: Response, responseType?: string) {
@@ -26,7 +55,7 @@ async function parse(response: Response, responseType?: string) {
   return { status: response.status, headers, data }
 }
 
-async function rawRequest(request: any, accessToken = sessionStorage.getItem(ACCESS)) {
+async function rawRequest(request: any, accessToken = authStorage.get(ACCESS)) {
   const query = new URLSearchParams()
   Object.entries(request.query || {}).forEach(([key, value]) => {
     if (value !== undefined && value !== null) query.set(key, String(value))
@@ -48,14 +77,19 @@ async function rawRequest(request: any, accessToken = sessionStorage.getItem(ACC
 async function requestDineHub(request: any) {
   try {
     let result = await rawRequest(request)
-    if (result.response.status === 401 && !request.path.startsWith('/auth/')) {
-      const refreshToken = sessionStorage.getItem(REFRESH)
+    if (result.response.status === 401 && !String(request.path || '').startsWith('/auth/login') && !String(request.path || '').startsWith('/auth/refresh') && !String(request.path || '').startsWith('/auth/register')) {
+      const refreshToken = authStorage.get(REFRESH)
       if (refreshToken) {
         const refresh = await rawRequest({ method: 'POST', path: '/auth/refresh', body: { refreshToken } }, null)
         if (refresh.response.ok) {
           tokensFrom(refresh.parsed.data)
           result = await rawRequest(request)
+        } else {
+          // Refresh rejected — end the lasting session so the UI can return to login.
+          clearAuthTokens()
         }
+      } else {
+        clearAuthTokens()
       }
     }
     tokensFrom(result.parsed.data)
@@ -107,7 +141,7 @@ async function connectWebRealtime() {
     emitState('connected')
     return
   }
-  const token = sessionStorage.getItem(ACCESS)
+  const token = authStorage.get(ACCESS)
   if (!token) throw new Error('An authenticated session is required')
   emitState('connecting')
   const { io } = await import('socket.io-client')
@@ -188,7 +222,7 @@ async function uploadMenuImageWeb(
   const form = new FormData()
   form.append('file', new Blob([bytes], { type: file.mimeType }), file.name)
   onProgress(20)
-  const accessToken = sessionStorage.getItem(ACCESS)
+  const accessToken = authStorage.get(ACCESS)
   const response = await fetch(`${API_BASE}${MENU_UPLOAD[kind]}`, {
     method: 'POST',
     headers: {
@@ -215,10 +249,10 @@ export function installBrowserBridge() {
   const noopUnsubscribe = () => () => {}
   ;(window as any).electronAPI = {
     requestDineHub,
-    hasSession: async () => Boolean(sessionStorage.getItem(ACCESS) && sessionStorage.getItem(REFRESH)),
-    clearTokens: async () => { sessionStorage.removeItem(ACCESS); sessionStorage.removeItem(REFRESH) },
-    getTenantSlug: async () => sessionStorage.getItem('dinehub.web.tenant') || null,
-    setTenantSlug: async (slug: string) => { sessionStorage.setItem('dinehub.web.tenant', slug) },
+    hasSession: async () => Boolean(authStorage.get(ACCESS) && authStorage.get(REFRESH)),
+    clearTokens: async () => { clearAuthTokens() },
+    getTenantSlug: async () => authStorage.get(TENANT),
+    setTenantSlug: async (slug: string) => { authStorage.set(TENANT, slug) },
     getDeviceId: async () => deviceId(),
     getAppVersion: async () => 'web',
     openExternal: async (url: string) => { window.open(url, '_blank', 'noopener,noreferrer') },

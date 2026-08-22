@@ -102,7 +102,7 @@ export const ordersApi = {
     try {
       return await requestOrders(params, signal)
     } catch (error) {
-      // Older DineHub deployments reject the new dashboard query parameters.
+      // Older DiningHub deployments reject the new dashboard query parameters.
       // Fall back to the original endpoint shape; the screen applies the same
       // filters locally until server-side filtering is available.
       const canFallback = Boolean(params && Object.values(params).some((value) => value !== undefined)) &&
@@ -120,6 +120,21 @@ export const ordersApi = {
       apiClient.get<ApiResponse<OrderTotalsPreview>>('/orders/preview-totals', {
         params: { subtotal, voucherCode },
       }),
+    ),
+
+  previewStock: (items: Array<{ menuItemId?: string; variantId?: string; quantity: number }>) =>
+    unwrap(
+      apiClient.post<ApiResponse<{
+        ok: boolean
+        shortages: Array<{
+          inventoryItemId: string
+          name: string
+          unit: string
+          required: number
+          available: number
+          shortBy: number
+        }>
+      }>>('/orders/preview-stock', { items }),
     ),
 
   create: (body: CreateOrderRequest) =>

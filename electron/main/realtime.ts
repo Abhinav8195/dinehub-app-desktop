@@ -2,7 +2,7 @@ import { BrowserWindow } from 'electron'
 import { io, type Socket } from 'socket.io-client'
 import { getAccessToken } from './store/secureStore'
 
-const SOCKET_URL = process.env.DINEHUB_SOCKET_URL || import.meta.env.MAIN_VITE_SOCKET_URL || 'https://dininghub.in'
+const SOCKET_URL = process.env.DINEHUB_SOCKET_URL || import.meta.env.MAIN_VITE_SOCKET_URL || 'http://localhost:3000'
 const FORWARDED_EVENTS = [
   'new_order', 'order_updated', 'order_status_updated', 'new_kitchen_order',
   'kitchen_order_updated', 'table_updated', 'table_status_updated',
