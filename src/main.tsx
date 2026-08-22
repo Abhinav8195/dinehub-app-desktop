@@ -7,6 +7,7 @@ import { Toaster } from 'sonner'
 import { store } from '@/store'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AuthProvider } from '@/providers/AuthProvider'
+import { AppErrorBoundary } from '@/components/AppErrorBoundary'
 import App from './App'
 import { UnsupportedEnvironment } from '@/components/UnsupportedEnvironment'
 import './index.css'
@@ -60,10 +61,12 @@ const application = window.electronAPI ? (
         <TooltipProvider>
           <AuthProvider>
             <ThemeInitializer>
-              <AppBootstrap>
-                <App />
-                <Toaster position="top-right" richColors closeButton />
-              </AppBootstrap>
+              <AppErrorBoundary>
+                <AppBootstrap>
+                  <App />
+                  <Toaster position="top-right" richColors closeButton />
+                </AppBootstrap>
+              </AppErrorBoundary>
             </ThemeInitializer>
           </AuthProvider>
         </TooltipProvider>

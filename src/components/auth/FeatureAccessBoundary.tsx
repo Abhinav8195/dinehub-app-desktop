@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, LogOut, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -25,8 +26,39 @@ export function FeatureAccessBoundary({ children }: { children: React.ReactNode 
   const { isLoading, isError, error, refetch, hasAnyFeature } = useFeatureAccess()
   const { isSuperAdmin } = usePermissions()
   const signOut = useSignOut()
+  const [tookTooLong, setTookTooLong] = useState(false)
 
-  if (isLoading) return <SplashScreen />
+  useEffect(() => {
+    if (!isLoading) {
+      setTookTooLong(false)
+      return
+    }
+    const timer = window.setTimeout(() => setTookTooLong(true), 10_000)
+    return () => window.clearTimeout(timer)
+  }, [isLoading])
+
+  if (isLoading && !tookTooLong) return <SplashScreen />
+
+  if (isLoading && tookTooLong) {
+    return (
+      <CenteredCard>
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-destructive" /> Still loading</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Workspace features are taking longer than expected. Retry or sign in again.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => { setTookTooLong(false); void refetch() }}><RefreshCw className="mr-2 h-4 w-4" /> Retry</Button>
+              <Button variant="outline" onClick={() => void signOut()}><LogOut className="mr-2 h-4 w-4" /> Logout</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </CenteredCard>
+    )
+  }
 
   if (isError) {
     return (

@@ -74,7 +74,7 @@ export function PosOrderMetaBar({
             </Select>
           </Field>
           <Field label="Table">
-            <Select value={selectedTableId || ''} onValueChange={(value) => onTableChange(value || null)}>
+            <Select value={selectedTableId || undefined} onValueChange={(value) => onTableChange(value || null)}>
               <SelectTrigger className={cn('h-7 text-[11px]', !selectedTableId && 'border-primary')}>
                 <SelectValue placeholder="Select table" />
               </SelectTrigger>

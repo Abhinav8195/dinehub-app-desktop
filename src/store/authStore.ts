@@ -84,13 +84,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (get().featuresStatus !== 'ready') {
       set({ featuresStatus: 'loading', featuresError: null })
     }
-    try {
-      const flags = await tenantsApi.getFeatureFlags(user.tenantId)
-      set({ features: toRestaurantFeatureMap(flags), featuresStatus: 'ready', featuresError: null })
-    } catch (error) {
-      // /tenants/:id/feature-flags often 404s for restaurant users (needs tenants.read).
-      // Keep an already-loaded map, otherwise unlock core restaurant modules.
-      if (get().featuresStatus === 'ready' && Object.keys(get().features).length) return
+
+    const unlockStaffDefaults = () => {
       const isRestaurantStaff = Boolean(
         user.tenantId &&
         (user.roles?.some((role) =>
@@ -99,8 +94,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       )
       if (isRestaurantStaff) {
         set({ features: defaultRestaurantFeatureMap(), featuresStatus: 'ready', featuresError: null })
-        return
+        return true
       }
+      return false
+    }
+
+    try {
+      const flags = await Promise.race([
+        tenantsApi.getFeatureFlags(user.tenantId),
+        new Promise<never>((_, reject) => {
+          window.setTimeout(() => reject(new Error('Feature flags request timed out')), 12_000)
+        }),
+      ])
+      set({ features: toRestaurantFeatureMap(flags), featuresStatus: 'ready', featuresError: null })
+    } catch (error) {
+      // /tenants/:id/feature-flags often 404s for restaurant users (needs tenants.read).
+      // Keep an already-loaded map, otherwise unlock core restaurant modules.
+      if (get().featuresStatus === 'ready' && Object.keys(get().features).length) return
+      if (unlockStaffDefaults()) return
       set({
         features: {},
         featuresStatus: 'error',
@@ -126,7 +137,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   login: async (email, password) => {
-    set({ isLoading: true })
+    set({ isLoading: true, featuresStatus: 'loading', featuresError: null })
     try {
       const deviceId = await tokenBridge.getDeviceId()
       const appName = import.meta.env.VITE_APP_NAME || 'DiningHub Desktop'
@@ -139,11 +150,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         deviceId
       })
 
-      set({ user: result.user, isAuthenticated: true })
       if (result.user.tenant?.slug) {
         await tokenBridge.setTenantSlug(result.user.tenant.slug).catch(() => {})
       }
+      // Resolve features BEFORE flipping isAuthenticated — otherwise GuestGuard
+      // navigates into /app while FeatureAccessBoundary is stuck on a white splash.
       await get().loadFeatures(result.user)
+      set({ user: result.user, isAuthenticated: true })
     } finally {
       set({ isLoading: false })
     }
@@ -163,8 +176,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   fetchMe: async () => {
     const user = await authApi.me()
-    set({ user, isAuthenticated: true })
     await get().loadFeatures(user)
+    set({ user, isAuthenticated: true })
     return user
   },
 
@@ -175,8 +188,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (hasSession) {
         try {
           const user = await authApi.me()
-          set({ user, isAuthenticated: true })
           await get().loadFeatures(user)
+          set({ user, isAuthenticated: true })
         } catch (error) {
           const sessionRejected = error instanceof ApiError &&
             (error.statusCode === 401 || error.statusCode === 403)
@@ -186,8 +199,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             await tokenBridge.clearTokens().catch(() => {})
             set({ user: null, isAuthenticated: false, features: {}, featuresStatus: 'idle', featuresError: null })
           } else {
-            // Offline / temporary server failure: keep tokens, mark signed-in so app can use cache.
-            set({ isAuthenticated: true })
+            // Offline / temporary server failure: keep tokens only with a soft session.
+            // Never mark authenticated without a user — AuthGuard would bounce forever.
+            set({ user: null, isAuthenticated: false })
           }
         }
       } else {

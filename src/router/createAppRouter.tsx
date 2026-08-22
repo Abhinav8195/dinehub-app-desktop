@@ -55,11 +55,12 @@ function LayoutWrapper() {
 }
 
 function GuestGuard({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isInitialized } = useAuth()
+  const { isAuthenticated, isInitialized, user } = useAuth()
   if (!isInitialized) {
     return <SplashScreen />
   }
-  if (isAuthenticated) return <Navigate to="/app" replace />
+  // Require a loaded user — authenticated-without-user caused blank /app loops.
+  if (isAuthenticated && user) return <Navigate to="/app" replace />
   return <>{children}</>
 }
 

@@ -147,7 +147,7 @@ export function Topbar({ onCloseShift }: TopbarProps) {
           {isSuperAdmin ? (
             <div className="hidden xl:flex flex-col gap-0.5">
               <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground px-1">Restaurant</span>
-              <Select value={selectedRestaurantId} onValueChange={(v) => dispatch(setRestaurant(v))}>
+              <Select value={selectedRestaurantId || undefined} onValueChange={(v) => dispatch(setRestaurant(v))}>
                 <SelectTrigger className="w-[180px] h-9">
                   <SelectValue placeholder="Select restaurant" />
                 </SelectTrigger>
