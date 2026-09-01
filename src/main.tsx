@@ -8,6 +8,7 @@ import { store } from '@/store'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AuthProvider } from '@/providers/AuthProvider'
 import { AppErrorBoundary } from '@/components/AppErrorBoundary'
+import { UpdateNotifier } from '@/components/updates/UpdateNotifier'
 import App from './App'
 import { UnsupportedEnvironment } from '@/components/UnsupportedEnvironment'
 import './index.css'
@@ -30,13 +31,16 @@ const queryClient = new QueryClient({
   },
 })
 
+function applyDocumentTheme() {
+  const forceLight = document.documentElement.dataset.forceLight === '1'
+  const darkMode = !forceLight && store.getState().app.darkMode
+  document.documentElement.classList.toggle('dark', darkMode)
+}
+
 function ThemeInitializer({ children }: { children: React.ReactNode }) {
   useEffect(() => {
-    const darkMode = store.getState().app.darkMode
-    document.documentElement.classList.toggle('dark', darkMode)
-    const unsubscribe = store.subscribe(() => {
-      document.documentElement.classList.toggle('dark', store.getState().app.darkMode)
-    })
+    applyDocumentTheme()
+    const unsubscribe = store.subscribe(() => applyDocumentTheme())
     return unsubscribe
   }, [])
   return <>{children}</>
@@ -63,6 +67,7 @@ const application = window.electronAPI ? (
             <ThemeInitializer>
               <AppErrorBoundary>
                 <AppBootstrap>
+                  <UpdateNotifier />
                   <App />
                   <Toaster position="top-right" richColors closeButton />
                 </AppBootstrap>

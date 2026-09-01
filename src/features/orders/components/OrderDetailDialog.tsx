@@ -26,7 +26,7 @@ export function OrderDetailDialog({ order, open, onOpenChange, onStatusChange, s
     if (next === 'completed') {
       const unpaid = normalize(order.paymentStatus || '') !== 'paid' && !order.paymentMethod
       const tableNote = order.table
-        ? `This will free table ${order.table.label || order.table.number} and record the sale.`
+        ? `Table ${order.table.label || order.table.number} will move to Cleaning. Use Clear Table after the guest leaves.`
         : 'This will mark the order complete and record the sale.'
       const paymentNote = unpaid
         ? '\n\nPayment still looks pending. Complete only after you have collected payment.'
@@ -95,7 +95,7 @@ export function OrderDetailDialog({ order, open, onOpenChange, onStatusChange, s
                   </div>
                   {transitions.includes('completed') && (
                     <p className="mt-3 text-xs text-muted-foreground">
-                      Mark completed after payment — frees the table and records sales.
+                      Mark completed after payment — table goes to Cleaning. Clear the table when the guest leaves.
                     </p>
                   )}
                 </>

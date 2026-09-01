@@ -11,7 +11,7 @@ import { formatApiError } from '@/api/management-utils'
 import { cn, formatCurrency } from '@/lib/utils'
 import type { TableDto } from '@/api/types/pos.types'
 import {
-  STANDARD_FLOORS,
+  floorsFromTables,
   TABLE_STATUS_LEGEND,
   TABLE_STATUS_STYLES,
   normalizeTableStatus,
@@ -47,11 +47,10 @@ export function PosTableFloorView({
   const [activeTable, setActiveTable] = useState<TableDto | null>(null)
 
   const floorsWithTables = useMemo(() => {
-    const fromTables = tables.map((t) => t.floor).filter(Boolean)
-    const names = [...new Set([...STANDARD_FLOORS, ...fromTables])]
-    return names
-      .map((name) => ({ name, tables: tables.filter((t) => t.floor === name) }))
-      .filter((section) => section.tables.length > 0)
+    return floorsFromTables(tables).map((name) => ({
+      name,
+      tables: tables.filter((t) => t.floor === name),
+    }))
   }, [tables])
 
   const mergeMutation = useMutation({
@@ -76,9 +75,13 @@ export function PosTableFloorView({
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => tablesApi.updateStatus(id, status),
-    onSuccess: () => {
+    onSuccess: (_table, variables) => {
       queryClient.invalidateQueries({ queryKey: ['tables'] })
-      toast.success('Table updated')
+      toast.success(
+        variables.status === 'AVAILABLE'
+          ? 'Table cleared — now available for new guests'
+          : 'Table updated',
+      )
       setActiveTable(null)
     },
     onError: (error) => toast.error(formatApiError(error)),
@@ -147,8 +150,16 @@ export function PosTableFloorView({
                       onFloorChange(section.name)
                     }}
                     onDoubleClick={() => {
-                      if (status === 'available') onStartOrder(table)
-                      else setActiveTable(table)
+                      if (
+                        status === 'available'
+                        || status === 'occupied'
+                        || status === 'reserved'
+                        || table.currentOrder
+                      ) {
+                        onStartOrder(table)
+                      } else {
+                        setActiveTable(table)
+                      }
                     }}
                     className={cn(
                       'flex aspect-square flex-col items-center justify-center rounded-xl border-2 border-dashed p-1 transition-all',
@@ -198,24 +209,54 @@ export function PosTableFloorView({
                   <p className="font-semibold">{activeTable.currentOrder.orderNumber}</p>
                   <p>{activeTable.currentOrder.customerName || 'Guest'} · {formatCurrency(activeTable.currentOrder.total)}</p>
                   <p className="capitalize text-muted-foreground">{activeTable.currentOrder.status}</p>
+                  <Button
+                    type="button"
+                    className="mt-2 w-full"
+                    onClick={() => { onStartOrder(activeTable); setActiveTable(null) }}
+                  >
+                    <Plus className="mr-1 h-3.5 w-3.5" /> Add items / KOT
+                  </Button>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-2">
-                {normalizeTableStatus(activeTable.status) === 'available' && (
+                {normalizeTableStatus(activeTable.status) === 'available' && !activeTable.currentOrder && (
                   <Button type="button" onClick={() => { onStartOrder(activeTable); setActiveTable(null) }}>
                     <Plus className="mr-1 h-3.5 w-3.5" /> New order
                   </Button>
                 )}
-                <Button type="button" variant="outline" onClick={() => statusMutation.mutate({ id: activeTable.id, status: 'AVAILABLE' })}>
-                  Mark available
-                </Button>
+                {normalizeTableStatus(activeTable.status) === 'occupied' && !activeTable.currentOrder && (
+                  <Button type="button" onClick={() => { onStartOrder(activeTable); setActiveTable(null) }}>
+                    <Plus className="mr-1 h-3.5 w-3.5" /> Open table
+                  </Button>
+                )}
+                {normalizeTableStatus(activeTable.status) === 'cleaning' ? (
+                  <Button
+                    type="button"
+                    className="col-span-2"
+                    onClick={() => statusMutation.mutate({ id: activeTable.id, status: 'AVAILABLE' })}
+                    disabled={statusMutation.isPending}
+                  >
+                    Clear table
+                  </Button>
+                ) : (
+                  <Button type="button" variant="outline" onClick={() => statusMutation.mutate({ id: activeTable.id, status: 'AVAILABLE' })}>
+                    Clear table
+                  </Button>
+                )}
                 <Button type="button" variant="outline" onClick={() => statusMutation.mutate({ id: activeTable.id, status: 'RESERVED' })}>
                   Reserve
                 </Button>
-                <Button type="button" variant="outline" onClick={() => statusMutation.mutate({ id: activeTable.id, status: 'CLEANING' })}>
-                  Cleaning
-                </Button>
+                {normalizeTableStatus(activeTable.status) !== 'cleaning' && (
+                  <Button type="button" variant="outline" onClick={() => statusMutation.mutate({ id: activeTable.id, status: 'CLEANING' })}>
+                    Cleaning
+                  </Button>
+                )}
               </div>
+              {normalizeTableStatus(activeTable.status) === 'cleaning' && (
+                <p className="text-xs text-muted-foreground">
+                  Order finished — clear this table after the guest leaves (usually 5–20 min).
+                </p>
+              )}
             </div>
           )}
         </DialogContent>

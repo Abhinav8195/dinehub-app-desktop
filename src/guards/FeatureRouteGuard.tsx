@@ -26,7 +26,9 @@ export function FeatureRouteGuard({ feature, permission, children }: {
   const location = useLocation()
   const { hasFeature, isLoading } = useFeatureAccess()
   const { can, permissions, roles, isSuperAdmin } = usePermissions()
-  const featureAllowed = hasFeature(feature)
+  const featureAllowed =
+    hasFeature(feature)
+    || (feature === 'KOT_KITCHEN' && hasFeature('POS'))
   const permissionAllowed = !permission || can(permission)
   const decision = getFeatureRouteDecision(isLoading, featureAllowed, permissionAllowed)
   const fallbackRoute = getFirstAccessibleRoute({

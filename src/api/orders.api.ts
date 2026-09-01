@@ -140,6 +140,12 @@ export const ordersApi = {
   create: (body: CreateOrderRequest) =>
     unwrap(apiClient.post<ApiResponse<PosOrder>>('/orders', body)),
 
+  addItems: (id: string, body: { items: CreateOrderRequest['items'] }) =>
+    unwrap(apiClient.post<ApiResponse<PosOrder>>(`/orders/${id}/items`, body)),
+
+  settlePayment: (id: string, body: { paymentMethod: NonNullable<CreateOrderRequest['paymentMethod']>; note?: string }) =>
+    unwrap(apiClient.patch<ApiResponse<PosOrder>>(`/orders/${id}/payment`, body)),
+
   updateStatus: (id: string, status: string) =>
     unwrap(
       apiClient.patch<ApiResponse<PosOrder>>(`/orders/${id}/status`, { status }),

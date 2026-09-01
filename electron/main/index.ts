@@ -52,9 +52,12 @@ function createWindow(): void {
     ...(process.platform === 'darwin' ? {} : { icon: appIcon }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: !isDev,
+      // Packaged Windows builds with sandbox+asar often fail to load preload, which
+      // made login fall through to renderer fetch → "Failed to fetch".
+      sandbox: false,
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webSecurity: true,
     }
   })
 
@@ -73,7 +76,11 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    const url = details.url || ''
+    if (url === 'about:blank' || url === '') {
+      return { action: 'allow' }
+    }
+    shell.openExternal(url)
     return { action: 'deny' }
   })
 

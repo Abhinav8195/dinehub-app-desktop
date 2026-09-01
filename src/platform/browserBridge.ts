@@ -245,7 +245,12 @@ async function uploadMenuImageWeb(
 }
 
 export function installBrowserBridge() {
-  if (window.electronAPI) return
+  // Electron must use the real preload IPC bridge. Falling back to renderer `fetch`
+  // from a packaged `file://` page hits CORS and surfaces as "Failed to fetch" on login.
+  const isElectron =
+    typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent)
+  if (isElectron || window.electronAPI) return
+
   const noopUnsubscribe = () => () => {}
   ;(window as any).electronAPI = {
     requestDineHub,
@@ -280,7 +285,21 @@ export function installBrowserBridge() {
         uploadMenuImageWeb(kind, file, onProgress),
     },
     window: { minimize: async () => undefined, maximize: async () => undefined, close: async () => undefined, openPOS: async () => undefined, openKDS: async () => undefined },
-    print: { receipt: async () => undefined, kitchen: async () => undefined, getPrinters: async () => [] },
+    print: { receipt: async (html: string) => {
+      const popup = window.open('', '_blank')
+      if (!popup) throw new Error('Allow pop-ups to print')
+      popup.document.write(html)
+      popup.document.close()
+      popup.document.title = 'Receipt'
+      popup.print()
+    }, kitchen: async (html: string) => {
+      const popup = window.open('', '_blank')
+      if (!popup) throw new Error('Allow pop-ups to print')
+      popup.document.write(html)
+      popup.document.close()
+      popup.document.title = 'KOT — Kitchen'
+      popup.print()
+    }, getPrinters: async () => [] },
     theme: { get: async () => false, set: async () => undefined },
     onApiError: noopUnsubscribe,
   }

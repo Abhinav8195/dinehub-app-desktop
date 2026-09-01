@@ -15,6 +15,8 @@ export interface NavItem {
   permission?: string
   feature: RestaurantFeature
   superAdminOnly?: boolean
+  /** When true, route/feature still works but item is omitted from the sidebar. */
+  hideInSidebar?: boolean
   children?: NavItem[]
   favorite?: boolean
   pinned?: boolean
@@ -190,10 +192,19 @@ export const NAVIGATION: NavItem[] = [
   {
     id: 'reports',
     title: 'Reports',
-    href: p('/reports'),
+    href: p('/reports?kind=item'),
     icon: BarChart3,
-    permission: 'reports.view'
-    , feature: 'REPORTS'
+    permission: 'reports.view',
+    feature: 'REPORTS',
+    children: [
+      { id: 'reports-sales', title: 'Sales Summary', href: p('/reports?kind=sales'), icon: BarChart3, permission: 'reports.view', feature: 'REPORTS' },
+      { id: 'reports-item', title: 'Item Summary', href: p('/reports?kind=item'), icon: BarChart3, permission: 'reports.view', feature: 'REPORTS' },
+      { id: 'reports-category', title: 'Category Summary', href: p('/reports?kind=category'), icon: BarChart3, permission: 'reports.view', feature: 'REPORTS' },
+      { id: 'reports-order', title: 'Order Summary', href: p('/reports?kind=order'), icon: BarChart3, permission: 'reports.view', feature: 'REPORTS' },
+      { id: 'reports-employee', title: 'Employee Summary', href: p('/reports?kind=employee'), icon: BarChart3, permission: 'reports.view', feature: 'REPORTS' },
+      { id: 'reports-variation', title: 'Variation Summary', href: p('/reports?kind=variation'), icon: BarChart3, permission: 'reports.view', feature: 'REPORTS' },
+      { id: 'reports-group', title: 'Group Summary', href: p('/reports?kind=group'), icon: BarChart3, permission: 'reports.view', feature: 'REPORTS' },
+    ],
   },
   {
     id: 'crm',
@@ -282,7 +293,7 @@ export const QUICK_ACTIONS = [
   { id: 'new-reservation', title: 'New Reservation', href: p('/reservations'), shortcut: 'F2', feature: 'RESERVATIONS' as RestaurantFeature },
   { id: 'add-customer', title: 'Add Customer', href: p('/customers'), shortcut: 'F3', feature: 'CUSTOMERS' as RestaurantFeature },
   { id: 'open-kds', title: 'Open Kitchen Display', href: p('/kitchen'), shortcut: 'F4', feature: 'KOT_KITCHEN' as RestaurantFeature },
-  { id: 'reports', title: 'View Reports', href: p('/reports'), shortcut: 'F5', feature: 'REPORTS' as RestaurantFeature }
+  { id: 'reports', title: 'View Reports', href: p('/reports?kind=item'), shortcut: 'F5', feature: 'REPORTS' as RestaurantFeature }
 ]
 
 /** Only English until full i18n is shipped. */

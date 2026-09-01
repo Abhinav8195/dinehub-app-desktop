@@ -11,43 +11,68 @@ export interface KotTicketInput {
   restaurantName?: string
 }
 
+/** Plain kitchen chit — no invoice columns, no prices (PetPooja-style KOT). */
 export function buildKotHtml(input: KotTicketInput): string {
-  const rows = input.items.map((item) => {
+  const lines: string[] = []
+  lines.push('================================')
+  lines.push('         K O T')
+  lines.push('      KITCHEN ORDER')
+  lines.push('================================')
+  lines.push('')
+  lines.push(String(input.restaurantName || BRAND.name).toUpperCase())
+  lines.push('')
+  lines.push(`Order : ${input.orderLabel}`)
+  lines.push(`Type  : ${input.orderType}`)
+  if (input.tableLabel) lines.push(`TABLE : ${input.tableLabel}`)
+  if (input.guestCount) lines.push(`Guests: ${input.guestCount}`)
+  if (input.waiterName) lines.push(`Waiter: ${input.waiterName}`)
+  lines.push(`Time  : ${new Date().toLocaleString('en-IN')}`)
+  lines.push('')
+  lines.push('--------------------------------')
+  lines.push('QTY   ITEM')
+  lines.push('--------------------------------')
+
+  for (const item of input.items) {
     const mods = (item.modifiers ?? []).map((m) => `${m.groupName}: ${m.name}`).join(', ')
-    const extras = [item.variantName, mods, item.notes].filter(Boolean).join(' · ')
-    return `<tr>
-      <td style="padding:6px 0;font-size:14px;font-weight:700;vertical-align:top">${item.quantity}×</td>
-      <td style="padding:6px 0;font-size:14px">
-        <div style="font-weight:600">${escapeHtml(item.name)}</div>
-        ${extras ? `<div style="font-size:11px;color:#444;margin-top:2px">${escapeHtml(extras)}</div>` : ''}
-      </td>
-    </tr>`
-  }).join('')
+    const variant = item.variantName ? ` (${item.variantName})` : ''
+    lines.push(`${String(item.quantity).padStart(3, ' ')}   ${item.name}${variant}`)
+    if (mods) lines.push(`      + ${mods}`)
+    if (item.notes?.trim()) lines.push(`      * ${item.notes.trim()}`)
+  }
+
+  lines.push('--------------------------------')
+  lines.push('')
+  lines.push('   *** KITCHEN COPY ONLY ***')
+  lines.push('   NOT AN INVOICE / BILL')
+  lines.push('   (No prices on this slip)')
+  lines.push('')
+  lines.push('================================')
+
+  const body = escapeHtml(lines.join('\n'))
 
   return `<!doctype html>
 <html><head><meta charset="utf-8" />
-<title>KOT</title>
+<title>KOT ${escapeHtml(input.orderLabel)}</title>
 <style>
-  body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin:0;padding:12px;color:#111}
-  h1{font-size:16px;margin:0 0 4px}
-  .meta{font-size:12px;margin-bottom:10px;line-height:1.4}
-  table{width:100%;border-collapse:collapse}
-  hr{border:none;border-top:1px dashed #999;margin:10px 0}
+  @page { size: 58mm auto; margin: 0; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    color: #000;
+  }
+  body {
+    width: 58mm;
+    padding: 3mm 2mm;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.35;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
 </style></head>
-<body>
-  <h1>KOT — ${escapeHtml(input.restaurantName || BRAND.name)}</h1>
-  <div class="meta">
-    <div><strong>${escapeHtml(input.orderLabel)}</strong></div>
-    <div>${escapeHtml(input.orderType)}${input.tableLabel ? ` · ${escapeHtml(input.tableLabel)}` : ''}</div>
-    ${input.guestCount ? `<div>Guests: ${input.guestCount}</div>` : ''}
-    ${input.waiterName ? `<div>Waiter: ${escapeHtml(input.waiterName)}</div>` : ''}
-    <div>${new Date().toLocaleString()}</div>
-  </div>
-  <hr />
-  <table>${rows}</table>
-  <hr />
-  <div class="meta">Kitchen copy — do not charge</div>
-</body></html>`
+<body>${body}</body></html>`
 }
 
 function escapeHtml(value: string): string {

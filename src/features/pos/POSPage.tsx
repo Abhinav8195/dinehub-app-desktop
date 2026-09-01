@@ -5,42 +5,48 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   addToCart, removeFromCart, updateQuantity, updateItemNotes, clearCart, replaceCartItem,
-  setOrderType, holdOrder, resumeOrder, discardHeldOrder, setSelectedTable,
-  setViewMode, setPosMeta, setManualDiscount, markKotSent, startNewOrder,
+  setOrderType, holdOrder, resumeOrder, discardHeldOrder, setSelectedTable, setActiveOrder, bindTableSession,
+  loadRunningBill, setViewMode, setPosMeta, setManualDiscount, markKotSent, startNewOrder,
 } from '@/store/slices/posSlice'
 import { addOrder } from '@/store/slices/ordersSlice'
 import { formatCurrency } from '@/lib/utils'
 import { calculateTaxBreakdown, DEFAULT_TAX_SETTINGS } from '@/lib/tax'
 import { BRAND } from '@/constants/brand'
-import { buildReceiptHtml } from '@/lib/print/receipt'
+import { buildReceiptHtml, buildKotReceiptHtml } from '@/lib/print/receipt'
+import { printKotReceiptHtml, printReceiptHtml } from '@/lib/print/print-jobs'
 import { menuApi } from '@/api/menu.api'
 import { combosApi } from '@/api/catalog.api'
 import { tablesApi } from '@/api/tables.api'
+import { ordersApi } from '@/api/orders.api'
 import { settingsApi } from '@/api/settings.api'
+import { formatApiError } from '@/api/management-utils'
 import { useTaxSettings } from '@/hooks/useTaxSettings'
 import { useAuth } from '@/hooks/useAuth'
 import { withOfflineCache } from '@/lib/offline'
 import { APP_BASE } from '@/constants/navigation'
 import { CheckoutModal } from './components/CheckoutModal'
 import { ModifierSelectionDialog } from './components/ModifierSelectionDialog'
-import { PosHeader } from './components/PosHeader'
+import { PosHeader, type PosLayoutMode } from './components/PosHeader'
 import { PosOrderMetaBar } from './components/PosOrderMetaBar'
 import { PosCategoryRail } from './components/PosCategoryRail'
 import { PosProductArea } from './components/PosProductArea'
 import { PosCartPanel, type PosQuickPay } from './components/PosCartPanel'
+import { PosNormalLayout } from './components/PosNormalLayout'
 import { PosTableFloorView } from './components/PosTableFloorView'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { RootState } from '@/store'
+import { store } from '@/store'
 import type { MenuItemDto, PosOrder, TableDto } from '@/api/types/pos.types'
 import type { OrderItem } from '@/types'
 import { findByShortCode, matchesMenuSearch } from './lib/menuSearch'
-import { buildKotHtml } from './lib/kot'
-import { STANDARD_FLOORS, tableDisplayLabel } from './lib/tableStatus'
+import { floorsFromTables, tableDisplayLabel } from './lib/tableStatus'
+import { mapPosOrderItemsToCart } from './lib/mapOrderToCart'
 import { usePosShortcuts } from './hooks/usePosShortcuts'
 
 const CART_WIDTH_KEY = 'dinehub:pos-cart-width'
+const LAYOUT_MODE_KEY = 'dinehub:pos-layout-mode'
 const MIN_CART_WIDTH = 280
 const MAX_CART_WIDTH = 440
 
@@ -50,13 +56,19 @@ const getInitialCartWidth = () => {
   return Number.isFinite(stored) ? Math.min(MAX_CART_WIDTH, Math.max(MIN_CART_WIDTH, stored)) : 320
 }
 
+const getInitialLayoutMode = (): PosLayoutMode => {
+  if (typeof window === 'undefined') return 'fast'
+  const stored = window.localStorage.getItem(LAYOUT_MODE_KEY)
+  return stored === 'normal' ? 'normal' : 'fast'
+}
+
 export default function POSPage() {
   const dispatch = useDispatch()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { user, logout } = useAuth()
   const {
-    cart, orderType, heldOrders, selectedTableId, viewMode, meta,
+    cart, orderType, heldOrders, selectedTableId, activeOrderId, activeOrderNumber, viewMode, meta,
     discount, discountMode, discountValue, kotSentKeys,
   } = useSelector((s: RootState) => s.pos)
   const unreadCount = useSelector((s: RootState) => s.notifications.unreadCount)
@@ -77,12 +89,30 @@ export default function POSPage() {
   const [holdFilter, setHoldFilter] = useState('')
   const [modifierItem, setModifierItem] = useState<MenuItemDto | null>(null)
   const [editingLine, setEditingLine] = useState<OrderItem | null>(null)
+  const [kotBusy, setKotBusy] = useState(false)
   const [cartWidth, setCartWidth] = useState(getInitialCartWidth)
+  const [layoutMode, setLayoutMode] = useState<PosLayoutMode>(getInitialLayoutMode)
   const cartWidthRef = useRef(cartWidth)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const shortCodeRef = useRef<HTMLInputElement>(null)
 
+  // POS stays light — dark theme makes counter billing hard to read.
+  useEffect(() => {
+    document.documentElement.dataset.forceLight = '1'
+    document.documentElement.classList.remove('dark')
+    return () => {
+      delete document.documentElement.dataset.forceLight
+      document.documentElement.classList.toggle('dark', store.getState().app.darkMode)
+    }
+  }, [])
+
   useEffect(() => { cartWidthRef.current = cartWidth }, [cartWidth])
+
+  const handleLayoutModeChange = (mode: PosLayoutMode) => {
+    setLayoutMode(mode)
+    window.localStorage.setItem(LAYOUT_MODE_KEY, mode)
+    if (mode === 'normal') dispatch(setViewMode('order'))
+  }
 
   const startCartResize = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault()
@@ -135,14 +165,8 @@ export default function POSPage() {
     refetchInterval: viewMode === 'tables' ? 10_000 : false,
   })
 
-  // Auto-select first available table for dine-in (Petpooja-style fast start)
-  useEffect(() => {
-    if (orderType !== 'dine-in' || selectedTableId) return
-    const first = tables.find((table) => String(table.status).toLowerCase() === 'available')
-    if (!first) return
-    dispatch(setSelectedTable(first.id))
-    dispatch(setPosMeta({ selectedFloor: first.floor }))
-  }, [dispatch, orderType, selectedTableId, tables])
+  // Do not auto-pick a table — New Order / post-KOT always show the floor plan
+  // so staff can choose any table, including occupied (running bill).
 
   const { data: combos = [] } = useQuery({
     queryKey: ['combos', 'pos'],
@@ -150,10 +174,7 @@ export default function POSPage() {
     staleTime: 60_000,
   })
 
-  const floors = useMemo(() => {
-    const fromTables = tables.map((t) => t.floor).filter(Boolean)
-    return [...new Set([...STANDARD_FLOORS, ...fromTables])]
-  }, [tables])
+  const tableFloors = useMemo(() => floorsFromTables(tables), [tables])
 
   const filteredItems = useMemo(() => {
     let list = catalogView === 'favorites'
@@ -173,7 +194,9 @@ export default function POSPage() {
   const displayTotal = Math.max(0, displayBreakdown.total - discount)
 
   const canAddItems = orderType !== 'dine-in' || Boolean(selectedTableId)
-  const actionsDisabled = cart.length === 0 || (orderType === 'dine-in' && !selectedTableId)
+  const actionsDisabled = (cart.length === 0 && !activeOrderId) || (orderType === 'dine-in' && !selectedTableId)
+  const kotDisabled = kotBusy || cart.filter((line) => !kotSentKeys.includes(line.lineKey)).length === 0
+    || (orderType === 'dine-in' && !selectedTableId)
 
   const handleAddItem = (item: MenuItemDto) => {
     if (!canAddItems) {
@@ -237,8 +260,12 @@ export default function POSPage() {
   }
 
   const openCheckout = (opts: { print: boolean; ebill?: boolean; forceSplit?: boolean }) => {
-    if (actionsDisabled) {
-      toast.error(orderType === 'dine-in' && !selectedTableId ? 'Select a table first' : 'Add items first')
+    if (cart.length === 0 && !activeOrderId) {
+      toast.error('Add items first')
+      return
+    }
+    if (orderType === 'dine-in' && !selectedTableId && !activeOrderId) {
+      toast.error('Select a table first')
       return
     }
     if (opts.forceSplit) setQuickPay('PART')
@@ -247,9 +274,59 @@ export default function POSPage() {
     setCheckoutOpen(true)
   }
 
+  const toApiItems = (lines: OrderItem[]) =>
+    lines.map((item) => ({
+      ...(item.menuItemId
+        ? {
+            menuItemId: item.menuItemId,
+            variantId: item.variantId,
+            modifierOptionIds: item.modifiers?.map((modifier) => modifier.id) ?? [],
+          }
+        : item.comboId
+          ? { comboId: item.comboId }
+          : { name: item.name, unitPrice: item.price }),
+      quantity: item.quantity,
+      notes: item.notes,
+    }))
+
+  const printKotTicket = async (pending: OrderItem[], order: PosOrder) => {
+    const table = tables.find((row) => row.id === selectedTableId)
+    const subtotal = pending.reduce((sum, line) => sum + line.price * line.quantity, 0)
+    const html = buildKotReceiptHtml({
+      orderNumber: order.orderNumber,
+      restaurant: {
+        name: String(restaurant?.name || BRAND.name),
+        logoUrl: typeof restaurant?.logoUrl === 'string' ? restaurant.logoUrl : undefined,
+        showLogo: restaurant?.receiptLogoEnabled !== false,
+        address: typeof restaurant?.address === 'string' ? restaurant.address : undefined,
+        phone: typeof restaurant?.phone === 'string' ? restaurant.phone : undefined,
+        gstin: typeof restaurant?.gstin === 'string' ? restaurant.gstin : undefined,
+      },
+      customerName: meta.customerName || undefined,
+      table: table ? tableDisplayLabel(table) : undefined,
+      orderType: orderType === 'dine-in' ? 'Dine In' : orderType === 'delivery' ? 'Delivery' : 'Pick Up',
+      waiterName: meta.waiterName || undefined,
+      guestCount: meta.guestCount,
+      items: pending.map((line) => ({
+        name: `${line.name}${line.variantName ? ` (${line.variantName})` : ''}`,
+        qty: line.quantity,
+        price: line.price,
+        amount: line.price * line.quantity,
+        notes: line.notes,
+        modifiers: line.modifiers,
+      })),
+      subtotal,
+      total: subtotal,
+      footerText: typeof restaurant?.receiptFooter === 'string' ? restaurant.receiptFooter : undefined,
+      date: order.createdAt,
+    })
+    await printKotReceiptHtml(html)
+  }
+
   const sendKot = async (alsoPrint: boolean) => {
-    if (actionsDisabled) {
-      toast.error('Add items and select table before KOT')
+    if (kotBusy) return
+    if (orderType === 'dine-in' && !selectedTableId) {
+      toast.error('Select a table before KOT')
       return
     }
     const pending = cart.filter((line) => !kotSentKeys.includes(line.lineKey))
@@ -257,37 +334,61 @@ export default function POSPage() {
       toast.message('No new items to send — already on KOT')
       return
     }
-    const table = tables.find((row) => row.id === selectedTableId)
-    const html = buildKotHtml({
-      orderLabel: `Draft · ${pending.reduce((n, i) => n + i.quantity, 0)} new items`,
-      tableLabel: table ? tableDisplayLabel(table) : undefined,
-      orderType: orderType === 'dine-in' ? 'Dine In' : orderType === 'delivery' ? 'Delivery' : 'Pick Up',
-      guestCount: meta.guestCount,
-      waiterName: meta.waiterName || undefined,
-      items: pending,
-      restaurantName: String(restaurant?.name || BRAND.name),
-    })
 
-    if (alsoPrint || window.electronAPI?.print?.kitchen) {
-      try {
-        if (window.electronAPI?.print?.kitchen) await window.electronAPI.print.kitchen(html)
-        else if (window.electronAPI?.printReceipt) await window.electronAPI.printReceipt(html)
-        else {
-          const win = window.open('', '_blank', 'width=400,height=600')
-          if (win) {
-            win.document.write(html)
-            win.document.close()
-            win.focus()
-            win.print()
-          }
-        }
-      } catch {
-        toast.error('KOT print failed — items still marked sent locally')
+    setKotBusy(true)
+    try {
+      const items = toApiItems(pending)
+      const table = tables.find((row) => row.id === selectedTableId)
+      const boundOrderId = activeOrderId || table?.currentOrder?.id || null
+
+      let order: PosOrder
+      if (boundOrderId) {
+        order = await ordersApi.addItems(boundOrderId, { items })
+      } else {
+        order = await ordersApi.create({
+          type: orderType === 'dine-in' ? 'DINE_IN' : orderType === 'delivery' ? 'DELIVERY' : 'TAKEAWAY',
+          items,
+          tableId: orderType === 'dine-in' ? selectedTableId || undefined : undefined,
+          firstName: meta.customerName.split(/\s+/)[0] || undefined,
+          lastName: meta.customerName.split(/\s+/).slice(1).join(' ') || undefined,
+          phone: meta.customerPhone || undefined,
+          instructions: [
+            orderType === 'delivery' ? meta.deliveryAddress : '',
+            meta.deliveryNotes,
+            meta.waiterName ? `Waiter: ${meta.waiterName}` : '',
+            meta.guestCount ? `Guests: ${meta.guestCount}` : '',
+            'KOT — payment pending',
+          ].filter(Boolean).join(' · ') || undefined,
+          // No paymentMethod → unpaid running order; kitchen gets the ticket.
+        })
       }
-    }
 
-    dispatch(markKotSent(pending.map((line) => line.lineKey)))
-    toast.success(`KOT sent · ${pending.length} line${pending.length === 1 ? '' : 's'} (pay later to save order)`)
+      dispatch(setActiveOrder({ id: order.id, orderNumber: order.orderNumber }))
+      if (alsoPrint) {
+        try {
+          await printKotTicket(pending, order)
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : 'KOT print failed')
+        }
+      }
+
+      dispatch(markKotSent(pending.map((line) => line.lineKey)))
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      queryClient.invalidateQueries({ queryKey: ['tables'] })
+      toast.success(
+        alsoPrint
+          ? `KOT + print · ${order.orderNumber}`
+          : orderType === 'dine-in' && selectedTableId
+            ? `KOT sent · ${order.orderNumber} · table booked — add more anytime`
+            : `KOT sent · ${order.orderNumber}`,
+      )
+      // Back to table floor (all tables, including newly occupied).
+      dispatch(startNewOrder())
+    } catch (error) {
+      toast.error(formatApiError(error, 'Could not send KOT'))
+    } finally {
+      setKotBusy(false)
+    }
   }
 
   const handleOrderSuccess = (orderNumber: string, total: number, paymentMethod: string, serverOrder?: PosOrder) => {
@@ -295,7 +396,7 @@ export default function POSPage() {
     toast.success(
       offline
         ? `Offline order ${orderNumber} saved — ${formatCurrency(total)}`
-        : `Order ${orderNumber} · ${formatCurrency(total)}`,
+        : `Paid · ${orderNumber} · ${formatCurrency(total)}${selectedTableId ? ' · table available' : ''}`,
     )
     if (checkoutEbill) toast.message('eBill: share receipt from Orders when SMS/WhatsApp is enabled')
 
@@ -319,7 +420,7 @@ export default function POSPage() {
       updatedAt: new Date().toISOString(),
     }))
 
-    if (checkoutPrint && window.electronAPI?.printReceipt) {
+    if (checkoutPrint) {
       const html = buildReceiptHtml({
         orderNumber,
         invoiceNumber: (serverOrder as (PosOrder & { invoiceNumber?: string }) | undefined)?.invoiceNumber,
@@ -351,11 +452,13 @@ export default function POSPage() {
         footerText: typeof restaurant?.receiptFooter === 'string' ? restaurant.receiptFooter : undefined,
         date: serverOrder?.createdAt,
       })
-      window.electronAPI.printReceipt(html).catch(() => {})
+      printReceiptHtml(html).catch(() => {})
     }
 
     dispatch(clearCart())
     dispatch(setSelectedTable(null))
+    dispatch(setActiveOrder({ id: null, orderNumber: null }))
+    dispatch(setViewMode('tables'))
     setLoyalty(false)
     setFeedbackSms(false)
     setMarkedPaid(true)
@@ -369,12 +472,12 @@ export default function POSPage() {
   usePosShortcuts({
     onNewOrder: () => {
       dispatch(startNewOrder())
-      toast.success('New order')
+      toast.success('Select a table')
     },
     onFocusSearch: () => searchInputRef.current?.focus(),
     onSave: () => openCheckout({ print: false }),
     onPrint: () => openCheckout({ print: true }),
-    onKot: () => { void sendKot(true) },
+    onKot: () => { void sendKot(false) },
     onIncreaseQty: () => {
       if (!lastLine) return
       dispatch(updateQuantity({ id: lastLine.lineKey, quantity: lastLine.quantity + 1 }))
@@ -391,12 +494,50 @@ export default function POSPage() {
     navigate(`${APP_BASE}/orders?search=${encodeURIComponent(q)}`)
   }
 
+  const openRunningTable = async (table: TableDto) => {
+    if (!table.currentOrder) {
+      dispatch(bindTableSession({
+        tableId: table.id,
+        floor: table.floor,
+      }))
+      toast.success(`Table ${table.number} selected`)
+      return
+    }
+
+    const orderId = table.currentOrder.id
+    const orderNumber = table.currentOrder.orderNumber
+    try {
+      const order = await ordersApi.get(orderId)
+      const cartLines = mapPosOrderItemsToCart(order)
+      const guestMatch = order.instructions?.match(/Guests?:\s*(\d+)/i)
+      dispatch(loadRunningBill({
+        tableId: table.id,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        floor: table.floor,
+        cart: cartLines,
+        guestCount: guestMatch ? Number(guestMatch[1]) || 2 : 2,
+        customerName: order.customer?.name || table.currentOrder.customerName || '',
+        customerPhone: order.customer?.phone || '',
+      }))
+      toast.success(
+        cartLines.length
+          ? `${tableDisplayLabel(table)} · ${order.orderNumber} · ${cartLines.length} item(s) · ${formatCurrency(order.total)}`
+          : `${tableDisplayLabel(table)} · ${order.orderNumber} — running bill open`,
+      )
+    } catch (error) {
+      dispatch(bindTableSession({
+        tableId: table.id,
+        orderId,
+        orderNumber,
+        floor: table.floor,
+      }))
+      toast.error(formatApiError(error, 'Could not load running bill — add items or try again'))
+    }
+  }
+
   const onStartTableOrder = (table: TableDto) => {
-    dispatch(setOrderType('dine-in'))
-    dispatch(setSelectedTable(table.id))
-    dispatch(setPosMeta({ selectedFloor: table.floor }))
-    dispatch(setViewMode('order'))
-    toast.success(`Table ${table.number} selected`)
+    void openRunningTable(table)
   }
 
   const filteredHeld = heldOrders.filter((held) => {
@@ -420,21 +561,79 @@ export default function POSPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
       <PosHeader
         userName={user?.fullName || [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email}
         unreadCount={unreadCount}
         billSearch={billSearch}
         onBillSearchChange={setBillSearch}
         onBillSearchSubmit={handleBillSearch}
-        onNewOrder={() => { dispatch(startNewOrder()); toast.success('New order started') }}
+        onNewOrder={() => {
+          dispatch(startNewOrder())
+          toast.success('Select a table — available and occupied shown')
+        }}
         onOpenTables={() => dispatch(setViewMode(viewMode === 'tables' ? 'order' : 'tables'))}
         onOpenMenu={() => navigate(`${APP_BASE}/dashboard`)}
         onLogout={() => { void logout() }}
         viewMode={viewMode}
+        layoutMode={layoutMode}
+        onLayoutModeChange={handleLayoutModeChange}
       />
 
-      {viewMode === 'tables' ? (
+      {layoutMode === 'normal' ? (
+        <PosNormalLayout
+          categories={categories}
+          catalogView={catalogView === 'favorites' ? 'items' : catalogView}
+          selectedCategory={selectedCategory}
+          onSelectAll={() => { setCatalogView('items'); setSelectedCategory(null) }}
+          onSelectCategory={(id) => { setCatalogView('items'); setSelectedCategory(id) }}
+          onSelectCombos={() => setCatalogView('combos')}
+          orderType={orderType}
+          onOrderTypeChange={(type) => {
+            dispatch(setOrderType(type))
+            if (type !== 'dine-in') dispatch(setSelectedTable(null))
+          }}
+          tables={tables}
+          selectedTableId={selectedTableId}
+          onTableChange={(id) => {
+            if (!id) {
+              dispatch(setSelectedTable(null))
+              dispatch(setActiveOrder({ id: null }))
+              return
+            }
+            const table = tables.find((row) => row.id === id)
+            if (table) void openRunningTable(table)
+            else dispatch(setSelectedTable(id))
+          }}
+          search={search}
+          onSearchChange={setSearch}
+          items={filteredItems}
+          combos={filteredCombos}
+          canAddItems={canAddItems}
+          onAddItem={handleAddItem}
+          onAddCombo={handleAddCombo}
+          cart={cart}
+          cartWidth={cartWidth}
+          onResizeStart={startCartResize}
+          onQuantity={(lineKey, quantity) => dispatch(updateQuantity({ id: lineKey, quantity }))}
+          onRemove={(lineKey) => dispatch(removeFromCart(lineKey))}
+          onEditModifiers={editModifiers}
+          onHold={() => {
+            if (!cart.length) return
+            dispatch(holdOrder())
+            toast.success('Order held')
+          }}
+          onClearCart={() => {
+            dispatch(clearCart())
+            toast.success('Cart cleared')
+          }}
+          heldCount={heldOrders.length}
+          onOpenHeld={() => setHoldPickerOpen(true)}
+          breakdown={displayBreakdown}
+          onCheckout={() => openCheckout({ print: true })}
+          checkoutDisabled={actionsDisabled}
+        />
+      ) : viewMode === 'tables' ? (
         <PosTableFloorView
           tables={tables}
           selectedTableId={selectedTableId}
@@ -463,14 +662,31 @@ export default function POSPage() {
               orderType={orderType}
               onOrderTypeChange={(type) => {
                 dispatch(setOrderType(type))
-                if (type !== 'dine-in') dispatch(setSelectedTable(null))
+                if (type !== 'dine-in') {
+                  dispatch(setSelectedTable(null))
+                  dispatch(setActiveOrder({ id: null }))
+                }
               }}
               meta={meta}
               onMetaChange={(patch) => dispatch(setPosMeta(patch))}
               tables={tables}
               selectedTableId={selectedTableId}
-              onTableChange={(id) => dispatch(setSelectedTable(id))}
-              floors={floors}
+              onTableChange={(id) => {
+                if (!id) {
+                  dispatch(setSelectedTable(null))
+                  dispatch(setActiveOrder({ id: null }))
+                  return
+                }
+                const table = tables.find((row) => row.id === id)
+                if (table) {
+                  void openRunningTable(table)
+                  return
+                }
+                dispatch(setSelectedTable(id))
+                dispatch(setActiveOrder({ id: null }))
+              }}
+              floors={tableFloors}
+              activeOrderNumber={activeOrderNumber}
             />
 
             <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -501,6 +717,7 @@ export default function POSPage() {
                 discountAmount={discount}
                 total={displayTotal}
                 actionsDisabled={actionsDisabled}
+                kotDisabled={kotDisabled}
                 heldCount={heldOrders.length}
                 quickPay={quickPay}
                 loyalty={loyalty}
@@ -554,6 +771,8 @@ export default function POSPage() {
         orderType={orderType}
         tables={tables}
         selectedTableId={selectedTableId}
+        activeOrderId={activeOrderId || tables.find((t) => t.id === selectedTableId)?.currentOrder?.id || null}
+        kotSentKeys={kotSentKeys}
         taxSettings={taxSettings ?? DEFAULT_TAX_SETTINGS}
         manualDiscount={discount}
         initialPayMethod={

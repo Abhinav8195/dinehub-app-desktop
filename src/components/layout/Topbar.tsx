@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { Breadcrumb } from '@/components/common/Breadcrumb'
 import { AppUpdateButton } from '@/components/common/AppUpdateButton'
-import { setRestaurant, setBranch, setPrinterConnected, toggleDarkMode } from '@/store/slices/appSlice'
+import { setRestaurant, setBranch, setPrinterConnected, toggleDarkMode, setDarkMode } from '@/store/slices/appSlice'
 import { useAuth } from '@/hooks/useAuth'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 import { usePrinterStatus } from '@/hooks/usePrinterStatus'
@@ -37,6 +37,7 @@ interface TopbarProps {
 
 export function Topbar({ onCloseShift }: TopbarProps) {
   const navigate = useNavigate()
+  const location = useLocation()
   const dispatch = useDispatch()
   const { darkMode, selectedRestaurantId, selectedBranchId } = useSelector((s: RootState) => s.app)
   const { user, logout } = useAuth()
@@ -45,6 +46,7 @@ export function Topbar({ onCloseShift }: TopbarProps) {
   const { unreadCount } = useSelector((s: RootState) => s.notifications)
   const { isOffline, isOnline } = useOnlineStatus()
   const printer = usePrinterStatus()
+  const isPosRoute = location.pathname === `${APP_BASE}/pos` || location.pathname.endsWith('/pos')
 
   const isSuperAdmin = Boolean(user?.isSuperAdmin)
   const { data: tenantsResult } = useQuery({
@@ -60,6 +62,9 @@ export function Topbar({ onCloseShift }: TopbarProps) {
   useEffect(() => {
     dispatch(setPrinterConnected(printer.connected))
   }, [dispatch, printer.connected])
+  useEffect(() => {
+    if (isPosRoute) dispatch(setDarkMode(false))
+  }, [dispatch, isPosRoute])
   useEffect(() => {
     if (isSuperAdmin && !selectedRestaurantId && restaurants[0]) dispatch(setRestaurant(restaurants[0].id))
     const selectedStillValid = Boolean(selectedBranchId && branchList.some((b) => String(b.id) === selectedBranchId))
@@ -230,9 +235,11 @@ export function Topbar({ onCloseShift }: TopbarProps) {
             English
           </Badge>
 
-          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => dispatch(toggleDarkMode())}>
-            {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </Button>
+          {!isPosRoute && (
+            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => dispatch(toggleDarkMode())}>
+              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
+          )}
 
           <Button variant="ghost" size="icon" className="h-9 w-9 relative" onClick={() => navigate(`${APP_BASE}/notifications`)}>
             <Bell className="h-4 w-4" />

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { LayoutDashboard } from 'lucide-react'
 import { filterNavigation } from './navigation-access'
 import { getFeatureRouteDecision } from '@/guards/FeatureRouteGuard'
-import { featureEnabled, toRestaurantFeatureMap } from '@/types/restaurant-features'
+import { featureEnabled, reportsFeatureAvailable, toRestaurantFeatureMap } from '@/types/restaurant-features'
 import type { NavItem } from '@/constants/navigation'
 import { useAuthStore } from '@/store/authStore'
 import { canAccessNav } from './permissions'
@@ -30,6 +30,30 @@ describe('restaurant feature access', () => {
     expect(featureEnabled(map, 'POS')).toBe(true)
     expect(featureEnabled(map, 'ACCOUNTING')).toBe(false)
     expect(featureEnabled(map, 'REPORTS')).toBe(false)
+  })
+
+  it('keeps KOT on when Kitchen Display is enabled even if KOT_KITCHEN row is false', () => {
+    const map = toRestaurantFeatureMap([
+      { key: 'KOT_KITCHEN', enabled: false },
+      { key: 'KITCHEN_DISPLAY', enabled: true },
+    ])
+    expect(featureEnabled(map, 'KOT_KITCHEN')).toBe(true)
+  })
+
+  it('keeps KOT on when KOT_KITCHEN is enabled before a false Kitchen Display row', () => {
+    const map = toRestaurantFeatureMap([
+      { key: 'KOT_KITCHEN', enabled: true },
+      { key: 'KITCHEN_DISPLAY', enabled: false },
+    ])
+    expect(featureEnabled(map, 'KOT_KITCHEN')).toBe(true)
+  })
+
+  it('unlocks reports when core restaurant modules are enabled', () => {
+    const map = toRestaurantFeatureMap([
+      { key: 'KOT_KITCHEN', enabled: true },
+      { key: 'REPORTS', enabled: false },
+    ])
+    expect(reportsFeatureAvailable(map)).toBe(true)
   })
 
   it('shows enabled items and hides disabled items', () => {

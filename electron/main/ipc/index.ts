@@ -5,6 +5,7 @@ import { join } from 'path'
 import { getMainWindow } from '../window'
 import { checkForAppUpdates, getUpdateStatus, installDownloadedUpdate } from '../updater'
 import { registerAuthIpcHandlers } from './auth'
+import { printHtmlDocument } from '../print-html'
 import { requestDineHubTransport, session, uploadMenuImage, type ApiRequest, type MenuImageUpload } from '../api/dinehubClient'
 import { connectRealtime, disconnectRealtime } from '../realtime'
 
@@ -110,42 +111,42 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle('window:close', () => getMainWindow()?.close())
 
-  const openSecondaryWindow = (hash: string, fullscreen = true) => {
+  const openSecondaryWindow = (routePath: string, title: string, fullscreen = false) => {
+    // HashRouter paths are under /app (e.g. /app/kitchen), not bare /kitchen.
+    const hashPath = routePath.startsWith('/') ? routePath : `/${routePath}`
     const secondary = new BrowserWindow({
       width: 1280,
       height: 800,
+      show: true,
       fullscreen,
-      title: `DiningHub ${hash === '/pos' ? 'POS' : 'Kitchen'}`,
+      title: `DiningHub ${title}`,
       ...(process.platform === 'darwin' ? {} : { icon: appIcon }),
       webPreferences: {
-        preload: join(__dirname, '../../preload/index.js'),
+        preload: join(__dirname, '../preload/index.js'),
+        sandbox: false,
         contextIsolation: true,
-        nodeIntegration: false
-      }
+        nodeIntegration: false,
+      },
     })
-    const url = process.env['ELECTRON_RENDERER_URL']
-    if (url) {
-      secondary.loadURL(`${url}#${hash}`)
+    const devUrl = process.env['ELECTRON_RENDERER_URL']
+    if (devUrl) {
+      void secondary.loadURL(`${devUrl}#${hashPath}`)
     } else {
-      secondary.loadFile(join(__dirname, '../../renderer/index.html'), { hash })
+      // Packaged: out/main → out/renderer/index.html
+      void secondary.loadFile(join(__dirname, '../renderer/index.html'), { hash: hashPath })
     }
+    secondary.focus()
   }
 
-  ipcMain.handle('window:openPOS', () => openSecondaryWindow('/pos'))
-  ipcMain.handle('window:openKDS', () => openSecondaryWindow('/kitchen'))
+  ipcMain.handle('window:openPOS', () => openSecondaryWindow('/app/pos', 'POS'))
+  ipcMain.handle('window:openKDS', () => openSecondaryWindow('/app/kitchen', 'Kitchen', true))
 
   ipcMain.handle('print:receipt', async (_, html: string) => {
-    const win = new BrowserWindow({ show: false })
-    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
-    win.webContents.print({ silent: false, printBackground: true })
-    win.close()
+    await printHtmlDocument(html, 'receipt')
   })
 
   ipcMain.handle('print:kitchen', async (_, html: string) => {
-    const win = new BrowserWindow({ show: false })
-    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
-    win.webContents.print({ silent: true, printBackground: true })
-    win.close()
+    await printHtmlDocument(html, 'kitchen')
   })
 
   ipcMain.handle('print:getPrinters', async () => {

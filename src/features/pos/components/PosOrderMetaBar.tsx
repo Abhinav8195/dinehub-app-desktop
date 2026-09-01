@@ -17,6 +17,7 @@ interface PosOrderMetaBarProps {
   selectedTableId: string | null
   onTableChange: (tableId: string | null) => void
   floors: string[]
+  activeOrderNumber?: string | null
 }
 
 const ORDER_TYPES: Array<{ id: OrderType; label: string }> = [
@@ -34,6 +35,7 @@ export function PosOrderMetaBar({
   selectedTableId,
   onTableChange,
   floors,
+  activeOrderNumber,
 }: PosOrderMetaBarProps) {
   const floorTables = tables.filter((table) =>
     !meta.selectedFloor || table.floor === meta.selectedFloor,
@@ -84,6 +86,7 @@ export function PosOrderMetaBar({
                   .map((table) => (
                     <SelectItem key={table.id} value={table.id}>
                       T-{table.number} · {table.floor} · {table.capacity}p
+                      {table.currentOrder ? ` · ${table.currentOrder.orderNumber}` : ''}
                     </SelectItem>
                   ))}
               </SelectContent>
@@ -115,6 +118,13 @@ export function PosOrderMetaBar({
               onChange={(e) => onMetaChange({ waiterName: e.target.value })}
             />
           </Field>
+          {activeOrderNumber && (
+            <Field label="Running bill">
+              <div className="flex h-7 items-center rounded-md border border-primary/30 bg-primary/10 px-2 text-[11px] font-semibold text-primary">
+                {activeOrderNumber}
+              </div>
+            </Field>
+          )}
         </div>
       )}
 

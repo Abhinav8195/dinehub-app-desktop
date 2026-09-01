@@ -19,6 +19,7 @@ import { formatApiError } from '@/api/management-utils'
 import type { CreateTableRequest, TableDto } from '@/api/types/pos.types'
 import { BRAND } from '@/constants/brand'
 import { cn, formatCurrency, formatRelativeTime } from '@/lib/utils'
+import { STANDARD_FLOORS, floorOptionsForForm, floorsFromTables } from '@/features/pos/lib/tableStatus'
 
 const statusColors: Record<string, string> = {
   available: 'bg-success/10 border-success/30 text-success',
@@ -28,9 +29,6 @@ const statusColors: Record<string, string> = {
 }
 
 const STATUS_OPTIONS = ['available', 'occupied', 'reserved', 'cleaning'] as const
-
-/** Common Indian multi-floor restaurant layout (Ambala-style). */
-const STANDARD_FLOORS = ['Ground Floor', '1st Floor', '2nd Floor', '3rd Floor', 'Rooftop', 'Basement'] as const
 
 type TableForm = {
   number: string
@@ -48,13 +46,13 @@ const defaultForm = (floor: string): TableForm => ({
 
 export default function TablesPage() {
   const queryClient = useQueryClient()
-  const [floor, setFloor] = useState('Ground Floor')
+  const [floor, setFloor] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
   const [mergeOpen, setMergeOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
   const [selectedTable, setSelectedTable] = useState<TableDto | null>(null)
-  const [form, setForm] = useState<TableForm>(() => defaultForm('Ground Floor'))
+  const [form, setForm] = useState<TableForm>(() => defaultForm(STANDARD_FLOORS[0]))
   const [mergeSourceId, setMergeSourceId] = useState('')
   const [mergeTargetId, setMergeTargetId] = useState('')
   const [transferSourceId, setTransferSourceId] = useState('')
@@ -66,10 +64,9 @@ export default function TablesPage() {
     refetchInterval: 10_000,
   })
 
-  const floors = useMemo(() => {
-    const fromTables = tables.map((t) => t.floor).filter(Boolean)
-    return [...new Set([...STANDARD_FLOORS, ...fromTables])]
-  }, [tables])
+  /** Only floors that have tables — no empty "Ground Floor" tab when tables are on "Ground". */
+  const floors = useMemo(() => floorsFromTables(tables), [tables])
+  const formFloors = useMemo(() => floorOptionsForForm(tables), [tables])
 
   const floorTables = useMemo(
     () => tables.filter((t) => t.floor === floor),
@@ -109,7 +106,12 @@ export default function TablesPage() {
     onSuccess: (table) => {
       queryClient.invalidateQueries({ queryKey: ['tables'] })
       setSelectedTable(table)
-      toast.success(`Table T${table.number} is now ${table.status}`)
+      const status = String(table.status || '').toLowerCase()
+      toast.success(
+        status === 'available'
+          ? `Table T${table.number} cleared — now available`
+          : `Table T${table.number} is now ${table.status}`,
+      )
     },
     onError: (err) => toast.error(formatApiError(err, 'Could not update table status')),
   })
@@ -133,9 +135,10 @@ export default function TablesPage() {
   })
 
   const openAddDialog = () => {
+    const activeFloor = floor || formFloors[0] || STANDARD_FLOORS[0]
     const nextNumber =
-      tables.filter((t) => t.floor === floor).reduce((max, t) => Math.max(max, t.number), 0) + 1
-    setForm({ number: String(nextNumber), floor, capacity: '4', status: 'available' })
+      tables.filter((t) => t.floor === activeFloor).reduce((max, t) => Math.max(max, t.number), 0) + 1
+    setForm({ number: String(nextNumber), floor: activeFloor, capacity: '4', status: 'available' })
     setDialogOpen(true)
   }
 
@@ -187,7 +190,8 @@ export default function TablesPage() {
   }
 
   useEffect(() => {
-    if (floors.length > 0 && !floors.includes(floor)) {
+    if (!floors.length) return
+    if (!floor || !floors.includes(floor)) {
       setFloor(floors[0])
     }
   }, [floors, floor])
@@ -240,11 +244,15 @@ export default function TablesPage() {
           </div>
         ) : (
           <>
-            <Tabs value={floor} onValueChange={setFloor}>
+            <Tabs value={floor || floors[0] || undefined} onValueChange={setFloor}>
               <TabsList className="flex h-auto flex-wrap">
-                {floors.map((f) => (
-                  <TabsTrigger key={f} value={f}>{f}</TabsTrigger>
-                ))}
+                {floors.length === 0 ? (
+                  <TabsTrigger value="__none__" disabled>No floors yet</TabsTrigger>
+                ) : (
+                  floors.map((f) => (
+                    <TabsTrigger key={f} value={f}>{f}</TabsTrigger>
+                  ))
+                )}
               </TabsList>
             </Tabs>
 
@@ -322,7 +330,7 @@ export default function TablesPage() {
                 <Select value={form.floor} onValueChange={(value) => setForm({ ...form, floor: value })}>
                   <SelectTrigger><SelectValue placeholder="Select floor" /></SelectTrigger>
                   <SelectContent>
-                    {floors.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+                    {formFloors.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Input
@@ -479,6 +487,16 @@ export default function TablesPage() {
 
                 <div className="space-y-2">
                   <Label>Change Status</Label>
+                  {selectedTable.status === 'cleaning' && (
+                    <Button
+                      type="button"
+                      className="w-full"
+                      disabled={statusMutation.isPending}
+                      onClick={() => handleStatusChange('available')}
+                    >
+                      Clear table
+                    </Button>
+                  )}
                   <div className="grid grid-cols-2 gap-2">
                     {STATUS_OPTIONS.map((s) => (
                       <Button
@@ -490,13 +508,17 @@ export default function TablesPage() {
                         disabled={statusMutation.isPending}
                         onClick={() => handleStatusChange(s)}
                       >
-                        {s}
+                        {s === 'available' ? 'Clear / Available' : s}
                       </Button>
                     ))}
                   </div>
-                  {selectedTable.currentOrder ? (
+                  {selectedTable.status === 'cleaning' ? (
                     <p className="text-xs text-muted-foreground">
-                      Tip: choose <span className="font-medium">Available</span> to free this table now, or mark the order Completed / Delete it in Orders.
+                      Order is done — tap <span className="font-medium">Clear table</span> after the guest leaves (usually 5–20 min).
+                    </p>
+                  ) : selectedTable.currentOrder ? (
+                    <p className="text-xs text-muted-foreground">
+                      Completing the order moves this table to Cleaning. Clear it when the guest leaves.
                     </p>
                   ) : (
                     <p className="text-xs text-muted-foreground">

@@ -21,6 +21,8 @@ export interface HeldOrder {
   timestamp: string
   orderType: 'dine-in' | 'takeaway' | 'delivery'
   selectedTableId: string | null
+  activeOrderId?: string | null
+  activeOrderNumber?: string | null
   label?: string
   meta?: PosOrderMeta
   discount: number
@@ -32,6 +34,9 @@ export interface HeldOrder {
 interface POSState {
   cart: OrderItem[]
   selectedTableId: string | null
+  /** Open unpaid / KOT order bound to this POS session (same table running bill). */
+  activeOrderId: string | null
+  activeOrderNumber: string | null
   orderType: 'dine-in' | 'takeaway' | 'delivery'
   discount: number
   discountMode: PosDiscountMode
@@ -61,6 +66,8 @@ const emptyMeta = (): PosOrderMeta => ({
 const initialState: POSState = {
   cart: [],
   selectedTableId: null,
+  activeOrderId: null,
+  activeOrderNumber: null,
   orderType: 'dine-in',
   discount: 0,
   discountMode: 'none',
@@ -126,6 +133,8 @@ const posSlice = createSlice({
     clearCart: (state) => {
       state.cart = []
       state.kotSentKeys = []
+      state.activeOrderId = null
+      state.activeOrderNumber = null
       state.discount = 0
       state.discountMode = 'none'
       state.discountValue = 0
@@ -136,6 +145,61 @@ const posSlice = createSlice({
     },
     setSelectedTable: (state, action: PayloadAction<string | null>) => {
       state.selectedTableId = action.payload
+    },
+    setActiveOrder: (state, action: PayloadAction<{ id: string | null; orderNumber?: string | null }>) => {
+      state.activeOrderId = action.payload.id
+      state.activeOrderNumber = action.payload.orderNumber ?? null
+    },
+    bindTableSession: (state, action: PayloadAction<{
+      tableId: string
+      orderId?: string | null
+      orderNumber?: string | null
+      floor?: string | null
+    }>) => {
+      state.orderType = 'dine-in'
+      state.selectedTableId = action.payload.tableId
+      state.activeOrderId = action.payload.orderId ?? null
+      state.activeOrderNumber = action.payload.orderNumber ?? null
+      state.cart = []
+      state.kotSentKeys = []
+      state.discount = 0
+      state.discountMode = 'none'
+      state.discountValue = 0
+      state.meta = {
+        ...emptyMeta(),
+        selectedFloor: action.payload.floor ?? null,
+      }
+      state.viewMode = 'order'
+    },
+    /** Open occupied table with existing KOT lines + total visible for billing. */
+    loadRunningBill: (state, action: PayloadAction<{
+      tableId: string
+      orderId: string
+      orderNumber: string
+      floor?: string | null
+      cart: OrderItem[]
+      guestCount?: number
+      customerName?: string
+      customerPhone?: string
+    }>) => {
+      const cart = action.payload.cart
+      state.orderType = 'dine-in'
+      state.selectedTableId = action.payload.tableId
+      state.activeOrderId = action.payload.orderId
+      state.activeOrderNumber = action.payload.orderNumber
+      state.cart = cart
+      state.kotSentKeys = cart.map((line) => line.lineKey)
+      state.discount = 0
+      state.discountMode = 'none'
+      state.discountValue = 0
+      state.meta = {
+        ...emptyMeta(),
+        selectedFloor: action.payload.floor ?? null,
+        guestCount: action.payload.guestCount ?? 2,
+        customerName: action.payload.customerName ?? '',
+        customerPhone: action.payload.customerPhone ?? '',
+      }
+      state.viewMode = 'order'
     },
     setViewMode: (state, action: PayloadAction<PosViewMode>) => {
       state.viewMode = action.payload
@@ -164,14 +228,17 @@ const posSlice = createSlice({
       state.cart = []
       state.kotSentKeys = []
       state.selectedTableId = null
+      state.activeOrderId = null
+      state.activeOrderNumber = null
       state.discount = 0
       state.discountMode = 'none'
       state.discountValue = 0
       state.meta = emptyMeta()
-      state.viewMode = 'order'
+      // Always land on floor plan so staff picks any table (including occupied).
+      state.viewMode = 'tables'
     },
     holdOrder: (state) => {
-      if (state.cart.length === 0) return
+      if (state.cart.length === 0 && !state.activeOrderId) return
       const itemCount = state.cart.reduce((sum, item) => sum + item.quantity, 0)
       const total = state.cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
       const tableLabel = state.selectedTableId ? 'Table' : state.orderType.replace('-', ' ')
@@ -181,7 +248,11 @@ const posSlice = createSlice({
         timestamp: new Date().toISOString(),
         orderType: state.orderType,
         selectedTableId: state.selectedTableId,
-        label: `${tableLabel} · ${itemCount} item${itemCount === 1 ? '' : 's'} · ₹${Math.round(total)}`,
+        activeOrderId: state.activeOrderId,
+        activeOrderNumber: state.activeOrderNumber,
+        label: state.activeOrderNumber
+          ? `${state.activeOrderNumber} · ${itemCount} item${itemCount === 1 ? '' : 's'}`
+          : `${tableLabel} · ${itemCount} item${itemCount === 1 ? '' : 's'} · ₹${Math.round(total)}`,
         meta: { ...state.meta },
         discount: state.discount,
         discountMode: state.discountMode,
@@ -190,6 +261,8 @@ const posSlice = createSlice({
       })
       state.cart = []
       state.kotSentKeys = []
+      state.activeOrderId = null
+      state.activeOrderNumber = null
       state.discount = 0
       state.discountMode = 'none'
       state.discountValue = 0
@@ -202,6 +275,8 @@ const posSlice = createSlice({
       state.cart = held.cart
       state.orderType = held.orderType
       state.selectedTableId = held.selectedTableId
+      state.activeOrderId = held.activeOrderId ?? null
+      state.activeOrderNumber = held.activeOrderNumber ?? null
       state.meta = held.meta ? { ...held.meta } : emptyMeta()
       state.discount = held.discount ?? 0
       state.discountMode = held.discountMode ?? 'none'
@@ -218,7 +293,7 @@ const posSlice = createSlice({
 
 export const {
   addToCart, removeFromCart, updateQuantity, updateItemNotes, clearCart,
-  setOrderType, setSelectedTable, setDiscount, setTip, setManualDiscount,
+  setOrderType, setSelectedTable, setActiveOrder, bindTableSession, loadRunningBill, setDiscount, setTip, setManualDiscount,
   holdOrder, resumeOrder, replaceCartItem, discardHeldOrder,
   setViewMode, setPosMeta, markKotSent, resetKotSent, startNewOrder,
 } = posSlice.actions

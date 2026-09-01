@@ -183,7 +183,7 @@ export default function OrdersPage() {
         const tableLabel = updated.table?.label || updated.table?.number
         toast.success(
           tableLabel
-            ? `Order completed (payment received) · Table ${tableLabel} is now free · Sale recorded`
+            ? `Order completed · Table ${tableLabel} set to cleaning — Clear Table when guest leaves`
             : 'Order completed (payment received) · Sale recorded'
         )
       } else {

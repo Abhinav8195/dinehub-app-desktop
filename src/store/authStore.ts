@@ -8,6 +8,7 @@ import { tenantsApi } from '@/api/tenants.api'
 import {
   defaultRestaurantFeatureMap,
   featureEnabled,
+  reportsFeatureAvailable,
   toRestaurantFeatureMap,
   type RestaurantFeature,
   type RestaurantFeatureMap
@@ -50,7 +51,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   hasFeature: (feature) => {
     const { user, features } = get()
-    return featureEnabled(features, feature, Boolean(user?.isSuperAdmin || user?.userType === 'SUPER_ADMIN'))
+    const isSuperAdmin = Boolean(user?.isSuperAdmin || user?.userType === 'SUPER_ADMIN')
+    if (feature === 'REPORTS') {
+      return reportsFeatureAvailable(features, isSuperAdmin)
+    }
+    if (feature === 'KOT_KITCHEN') {
+      return featureEnabled(features, 'KOT_KITCHEN', isSuperAdmin)
+        || featureEnabled(features, 'POS', isSuperAdmin)
+    }
+    return featureEnabled(features, feature, isSuperAdmin)
   },
 
   hasAnyFeature: (requested) => requested.some((feature) => get().hasFeature(feature)),

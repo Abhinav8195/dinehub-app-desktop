@@ -31,6 +31,9 @@ interface CheckoutModalProps {
   orderType: 'dine-in' | 'takeaway' | 'delivery'
   tables: TableDto[]
   selectedTableId: string | null
+  activeOrderId?: string | null
+  /** Line keys already pushed via KOT — skip re-adding on settle. */
+  kotSentKeys?: string[]
   taxSettings: TaxSettings
   manualDiscount?: number
   initialPayMethod?: PayMethod
@@ -122,6 +125,8 @@ export function CheckoutModal({
   orderType,
   tables,
   selectedTableId,
+  activeOrderId = null,
+  kotSentKeys = [],
   taxSettings,
   manualDiscount = 0,
   initialPayMethod = 'CASH',
@@ -366,7 +371,53 @@ export function CheckoutModal({
       }
 
       try {
-        const order = await ordersApi.create(payload)
+        let order: PosOrder
+        const settleMethod =
+          apiPaymentMethod
+          ?? (resolved === 'OTHER' ? 'UPI' as const : 'CASH' as const)
+
+        if (activeOrderId) {
+          const pendingLines = cart.filter((item) => !kotSentKeys.includes(item.lineKey))
+          if (pendingLines.length) {
+            await ordersApi.addItems(activeOrderId, {
+              items: pendingLines.map((item) => ({
+                ...(item.menuItemId ? {
+                  menuItemId: item.menuItemId,
+                  variantId: item.variantId,
+                  modifierOptionIds: item.modifiers?.map((modifier) => modifier.id) ?? [],
+                } : item.comboId ? {
+                  comboId: item.comboId,
+                } : {
+                  name: item.name,
+                  unitPrice: item.price,
+                }),
+                quantity: item.quantity,
+                notes: item.notes,
+              })),
+            })
+          }
+          if (resolved === 'omit' || resolved === 'DUE') {
+            order = await ordersApi.get(activeOrderId)
+          } else {
+            try {
+              order = await ordersApi.settlePayment(activeOrderId, {
+                paymentMethod: settleMethod,
+                note: extraNotes,
+              })
+            } catch (settleErr) {
+              // Already paid (reprint / Save & Print again) — continue with receipt.
+              const existing = await ordersApi.get(activeOrderId).catch(() => null)
+              if (existing && String(existing.paymentStatus || '').toLowerCase() === 'paid') {
+                order = existing
+              } else {
+                throw settleErr
+              }
+            }
+          }
+        } else {
+          order = await ordersApi.create(payload)
+        }
+
         onSuccess(order.orderNumber, Math.max(0, order.total - manualDiscount), displayMethod, {
           ...order,
           discount: (order.discount ?? 0) + manualDiscount,
@@ -376,6 +427,7 @@ export function CheckoutModal({
         resetForm()
       } catch (createError) {
         if (!isNetworkFailure(createError)) throw createError
+        if (activeOrderId) throw createError
         await saveOffline()
       }
     } catch (err: unknown) {

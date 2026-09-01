@@ -18,6 +18,7 @@ interface PosCartPanelProps {
   discountAmount: number
   total: number
   actionsDisabled: boolean
+  kotDisabled?: boolean
   heldCount: number
   quickPay: PosQuickPay
   loyalty: boolean
@@ -59,6 +60,7 @@ export function PosCartPanel({
   discountAmount,
   total,
   actionsDisabled,
+  kotDisabled,
   heldCount,
   quickPay,
   loyalty,
@@ -124,8 +126,9 @@ export function PosCartPanel({
                       <div className="flex items-start gap-1">
                         <button
                           type="button"
-                          className="mt-0.5 shrink-0 text-danger hover:opacity-80"
-                          title="Remove"
+                          className="mt-0.5 shrink-0 text-danger hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-30"
+                          title={sent ? 'Already on KOT — cannot remove here' : 'Remove'}
+                          disabled={sent}
                           onClick={() => onRemove(item.lineKey)}
                         >
                           <X className="h-3 w-3" />
@@ -147,6 +150,7 @@ export function PosCartPanel({
                         variant="outline"
                         size="icon"
                         className="h-6 w-6 shrink-0"
+                        disabled={sent}
                         onClick={() => onQuantity(item.lineKey, Math.max(1, item.quantity - 1))}
                       >
                         <Minus className="h-2.5 w-2.5" />
@@ -157,6 +161,7 @@ export function PosCartPanel({
                         max={999}
                         inputMode="numeric"
                         value={item.quantity}
+                        disabled={sent}
                         onChange={(e) => {
                           const raw = e.target.value
                           if (raw === '') return
@@ -166,13 +171,14 @@ export function PosCartPanel({
                         onBlur={(e) => {
                           if (!e.target.value || Number(e.target.value) < 1) onQuantity(item.lineKey, 1)
                         }}
-                        className="h-6 w-9 px-0.5 text-center text-[11px] font-semibold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        className="h-6 w-9 px-0.5 text-center text-[11px] font-semibold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none disabled:opacity-60"
                       />
                       <Button
                         type="button"
                         variant="outline"
                         size="icon"
                         className="h-6 w-6 shrink-0"
+                        disabled={sent}
                         onClick={() => onQuantity(item.lineKey, Math.min(999, item.quantity + 1))}
                       >
                         <Plus className="h-2.5 w-2.5" />
@@ -272,9 +278,9 @@ export function PosCartPanel({
           <ActionBtn label="Save" shortcut="⌃S" icon={<Save className="h-3 w-3" />} disabled={actionsDisabled} onClick={onSave} tone="primary" />
           <ActionBtn label="Save & Print" shortcut="⌃P" icon={<Printer className="h-3 w-3" />} disabled={actionsDisabled} onClick={onSavePrint} tone="primary" />
           <ActionBtn label="Save & eBill" icon={<Smartphone className="h-3 w-3" />} disabled={actionsDisabled} onClick={onSaveEbill} tone="primary" />
-          <ActionBtn label="KOT" shortcut="⌃K" icon={<ChefHat className="h-3 w-3" />} disabled={actionsDisabled} onClick={onKot} tone="muted" />
-          <ActionBtn label="KOT & Print" icon={<ChefHat className="h-3 w-3" />} disabled={actionsDisabled} onClick={onKotPrint} tone="muted" />
-          <ActionBtn label="Hold" icon={<Pause className="h-3 w-3" />} disabled={actionsDisabled} onClick={onHold} tone="muted" />
+          <ActionBtn label="KOT" shortcut="⌃K" icon={<ChefHat className="h-3 w-3" />} disabled={kotDisabled ?? actionsDisabled} onClick={onKot} tone="muted" />
+          <ActionBtn label="KOT & Print" icon={<ChefHat className="h-3 w-3" />} disabled={kotDisabled ?? actionsDisabled} onClick={onKotPrint} tone="muted" />
+          <ActionBtn label="Hold" icon={<Pause className="h-3 w-3" />} disabled={actionsDisabled && !heldCount} onClick={onHold} tone="muted" />
         </div>
 
         {heldCount > 0 && (

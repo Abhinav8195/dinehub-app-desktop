@@ -4,7 +4,7 @@ import {
   clearTokens, getTenantSlug, setTenantSlug, getDeviceId
 } from '../store/secureStore'
 import { getMainWindow } from '../window'
-import { BrowserWindow } from 'electron'
+import { printHtmlDocument } from '../print-html'
 
 export function registerAuthIpcHandlers(): void {
   ipcMain.handle('auth:clearTokens', () => clearTokens())
@@ -17,12 +17,7 @@ export function registerAuthIpcHandlers(): void {
   })
 
   ipcMain.handle('print:receiptHtml', async (_, html: string) => {
-    const win = new BrowserWindow({ show: false })
-    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
-    await new Promise<void>((resolve) => {
-      win.webContents.print({ silent: false, printBackground: true }, () => resolve())
-    })
-    win.close()
+    await printHtmlDocument(html, 'receipt')
   })
 
   ipcMain.handle('log:apiError', (_, error: { message: string; path?: string; statusCode?: number }) => {

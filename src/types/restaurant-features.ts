@@ -18,7 +18,7 @@ export const isRestaurantFeature = (value: string): value is RestaurantFeature =
 
 export interface RestaurantFeatureFlag {
   key: string
-  enabled: boolean
+  enabled: boolean | string | number | null | undefined
   config?: unknown
 }
 
@@ -35,10 +35,23 @@ export function normalizeFeatureKey(key: string): RestaurantFeature | null {
   return FEATURE_ALIASES[upper] ?? null
 }
 
+function isFlagEnabled(enabled: RestaurantFeatureFlag['enabled']): boolean {
+  if (enabled === true || enabled === 1) return true
+  if (typeof enabled === 'string') return enabled.trim().toLowerCase() === 'true' || enabled.trim() === '1'
+  return false
+}
+
+/**
+ * Build the runtime feature map.
+ * Once a capability is enabled via any alias (e.g. KITCHEN_DISPLAY → KOT_KITCHEN),
+ * a later `enabled: false` on a sibling key must not turn it back off.
+ */
 export function toRestaurantFeatureMap(flags: RestaurantFeatureFlag[]): RestaurantFeatureMap {
   return flags.reduce<RestaurantFeatureMap>((map, flag) => {
     const key = normalizeFeatureKey(flag.key)
-    if (key) map[key] = flag.enabled === true
+    if (!key) return map
+    if (isFlagEnabled(flag.enabled)) map[key] = true
+    else if (map[key] !== true) map[key] = false
     return map
   }, {})
 }
@@ -57,4 +70,16 @@ export function featureEnabled(
   isSuperAdmin = false
 ): boolean {
   return isSuperAdmin || features[feature] === true
+}
+
+/** Sales/report summaries should stay available for any active restaurant module. */
+export function reportsFeatureAvailable(
+  features: RestaurantFeatureMap,
+  isSuperAdmin = false,
+): boolean {
+  if (featureEnabled(features, 'REPORTS', isSuperAdmin)) return true
+  const unlocks: RestaurantFeature[] = [
+    'ORDERS', 'POS', 'ANALYTICS', 'KOT_KITCHEN', 'TABLE_MANAGEMENT', 'CRM', 'CUSTOMERS',
+  ]
+  return unlocks.some((key) => featureEnabled(features, key, isSuperAdmin))
 }

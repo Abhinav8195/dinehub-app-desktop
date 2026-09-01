@@ -1,6 +1,6 @@
 {
   "name": "dine-hub-desktop",
-  "version": "1.0.14",
+  "version": "1.0.18",
   "description": "Enterprise Restaurant & Cafe Management Desktop Application",
   "main": "out/main/index.js",
   "author": "DiningHub",
@@ -14,7 +14,7 @@
     "preview": "electron-vite preview",
     "dist": "electron-vite build && electron-builder",
     "dist:mac": "electron-vite build && electron-builder --mac",
-    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:win": "electron-vite build && electron-builder --win --x64",
     "dist:linux": "electron-vite build && electron-builder --linux",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -99,6 +99,9 @@
     ],
     "files": [
       "out/**/*"
+    ],
+    "asarUnpack": [
+      "out/preload/**"
     ],
     "mac": {
       "icon": "build/icon.png",

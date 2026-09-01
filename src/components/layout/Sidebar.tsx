@@ -30,9 +30,13 @@ export function Sidebar() {
   const { permissions, roles, isSuperAdmin } = usePermissions()
   const { hasFeature } = useFeatureAccess()
   const [search, setSearch] = useState('')
-  const [expanded, setExpanded] = useState<string[]>(['menu', 'inventory', 'users'])
+  const [expanded, setExpanded] = useState<string[]>(['menu', 'inventory', 'users', 'reports'])
   const { data: restaurant } = useQuery({ queryKey: ['settings', 'restaurant'], queryFn: settingsApi.getRestaurant, staleTime: 60_000 })
-  const kotEnabled = restaurant?.kotEnabled !== false
+  // Show KOT / Kitchen whenever admin feature is on, restaurant KOT setting is on,
+  // or staff already has kitchen/POS access (so the nav item is never "missing").
+  const kitchenFeatureOn = hasFeature('KOT_KITCHEN')
+  const kotSettingOn = restaurant?.kotEnabled !== false
+  const showKitchenNav = kitchenFeatureOn || kotSettingOn
   const tenantId = user?.isSuperAdmin || user?.userType === 'SUPER_ADMIN'
     ? selectedRestaurantId
     : user?.tenantId
@@ -57,8 +61,35 @@ export function Sidebar() {
     canAccessNav(item.permission, permissions, roles, isSuperAdmin, item.superAdminOnly)
 
   const allVisible = useMemo(() => {
-    const visible = filterNavigation(navigationWithLiveBadges, { canPermission: canSee, hasFeature })
-      .filter((item) => kotEnabled || item.id !== 'kitchen')
+    let visible = filterNavigation(navigationWithLiveBadges, {
+      canPermission: canSee,
+      // Treat KOT as available when Kitchen Display / KOT feature OR POS is enabled,
+      // so the sidebar entry is not dropped by a missing flag row.
+      hasFeature: (feature) => {
+        if (feature === 'KOT_KITCHEN') {
+          return hasFeature('KOT_KITCHEN') || hasFeature('POS') || kotSettingOn
+        }
+        if (feature === 'REPORTS') {
+          return hasFeature('REPORTS')
+        }
+        return hasFeature(feature)
+      },
+    }).filter((item) => !item.hideInSidebar)
+
+    const kitchen = navigationWithLiveBadges.find((item) => item.id === 'kitchen')
+    if (kitchen && canSee(kitchen) && showKitchenNav && !visible.some((item) => item.id === 'kitchen')) {
+      const insertAfter = visible.findIndex((item) => item.id === 'orders' || item.id === 'pos')
+      visible = [...visible]
+      visible.splice(insertAfter >= 0 ? insertAfter + 1 : 0, 0, kitchen)
+    }
+
+    const reports = navigationWithLiveBadges.find((item) => item.id === 'reports')
+    if (reports && canSee(reports) && hasFeature('REPORTS') && !visible.some((item) => item.id === 'reports')) {
+      const insertAfter = visible.findIndex((item) => item.id === 'crm' || item.id === 'customers' || item.id === 'reservations')
+      visible = [...visible]
+      visible.splice(insertAfter >= 0 ? insertAfter : visible.length, 0, reports)
+    }
+
     const query = search.trim().toLowerCase()
     if (!query) return visible
 
@@ -67,7 +98,7 @@ export function Sidebar() {
       const matchingChildren = item.children?.filter((child) => child.title.toLowerCase().includes(query))
       return matchingChildren?.length ? [{ ...item, children: matchingChildren }] : []
     })
-  }, [search, permissions, roles, isSuperAdmin, hasFeature, kotEnabled, navigationWithLiveBadges])
+  }, [search, permissions, roles, isSuperAdmin, hasFeature, showKitchenNav, kotSettingOn, navigationWithLiveBadges])
   const pinnedIds = new Set(pinnedMenus)
   const favoriteIds = new Set(favorites)
 
@@ -78,9 +109,14 @@ export function Sidebar() {
 
   useEffect(() => {
     const activeParent = allVisible.find((item) =>
-      item.children?.some((child) =>
-        location.pathname === child.href || location.pathname.startsWith(child.href + '/')
-      )
+      item.children?.some((child) => {
+        const [childPath, childQuery = ''] = child.href.split('?')
+        if (childQuery) {
+          return location.pathname === childPath && location.search === `?${childQuery}`
+        }
+        return location.pathname === child.href || location.pathname.startsWith(child.href + '/')
+      })
+      || (item.id === 'reports' && location.pathname.startsWith('/app/reports')),
     )
     if (activeParent) {
       setExpanded((current) => current.includes(activeParent.id) ? current : [...current, activeParent.id])
@@ -98,9 +134,11 @@ export function Sidebar() {
   }
 
   const renderNavItem = (item: NavItem, depth = 0) => {
-    const isActive =
-      location.pathname === item.href ||
-      (item.href !== '/app' && item.href !== '/' && location.pathname.startsWith(item.href + '/'))
+    const [itemPath, itemQuery = ''] = item.href.split('?')
+    const isActive = itemQuery
+      ? location.pathname === itemPath && location.search === `?${itemQuery}`
+      : location.pathname === item.href ||
+        (item.href !== '/app' && item.href !== '/' && location.pathname.startsWith(item.href + '/'))
     const hasChildren = item.children && item.children.length > 0
     const isExpanded = expanded.includes(item.id)
     const visibleChildren = item.children?.filter(canSee) ?? []

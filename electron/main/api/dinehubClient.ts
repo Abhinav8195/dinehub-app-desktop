@@ -202,7 +202,17 @@ async function send(request: ApiRequest, accessToken: string | null): Promise<De
     logResponse(request.method, url, response.status)
   } catch (error) {
     logFailure(request.method, url, error)
-    throw error
+    const raw = error instanceof Error ? error.message : 'Network request failed'
+    const unreachable =
+      /failed to fetch|fetch failed|networkerror|econnrefused|enotfound|etimedout|certificate|ssl|unable to connect/i
+        .test(raw)
+    throw {
+      statusCode: 0,
+      message: unreachable
+        ? `Cannot reach DiningHub API (${baseUrl}). Check internet / VPN, then try again.`
+        : raw,
+      path: request.path,
+    } satisfies ApiFailure
   }
   if (response.status === 401 && !isAuthCredentialPath(request.path)) {
     const freshToken = await refreshAccessToken()
