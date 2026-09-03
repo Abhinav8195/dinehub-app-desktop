@@ -9,6 +9,7 @@ const electronAPI = {
     error?: { statusCode: number; message: string; errors?: string[] | Record<string, string[]>; path?: string }
   }> => ipcRenderer.invoke('dinehub:request', request),
   hasSession: (): Promise<boolean> => ipcRenderer.invoke('auth:hasSession'),
+  getCachedUser: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('auth:getCachedUser'),
   menuImages: {
     select: (kind: 'category' | 'item' | 'combo' = 'item'): Promise<{
       name: string

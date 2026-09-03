@@ -1,7 +1,7 @@
 import axios, { type AxiosAdapter, type AxiosResponse } from 'axios'
 import { ApiError, type ApiErrorBody, type ApiResponse } from './types/common'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://dininghub.in/api/v1'
 
 type AuthEventCallback = () => void
 const authEventListeners = new Set<AuthEventCallback>()
@@ -22,6 +22,8 @@ function getElectronAPI() {
 // Session metadata is available to the renderer; credentials are deliberately not.
 export const tokenBridge = {
   hasSession: async (): Promise<boolean> => (await getElectronAPI()?.hasSession()) ?? false,
+  getCachedUser: async (): Promise<Record<string, unknown> | null> =>
+    (await getElectronAPI()?.getCachedUser()) ?? null,
   clearTokens: async (): Promise<void> => { await getElectronAPI()?.clearTokens() },
   getTenantSlug: async (): Promise<string | null> => (await getElectronAPI()?.getTenantSlug()) ?? null,
   setTenantSlug: async (slug: string): Promise<void> => { await getElectronAPI()?.setTenantSlug(slug) },

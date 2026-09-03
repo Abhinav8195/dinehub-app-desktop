@@ -28,6 +28,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       HAS_MAC_CERTIFICATE: ${{ secrets.CSC_LINK != '' }}
+      # .env files are gitignored — bake production API into every release build.
+      VITE_API_URL: https://dininghub.in/api/v1
+      MAIN_VITE_API_URL: https://dininghub.in/api/v1
+      VITE_SOCKET_URL: https://dininghub.in
+      MAIN_VITE_SOCKET_URL: https://dininghub.in
+      VITE_APP_NAME: DiningHub
+
     steps:
       - name: Check out source
         uses: actions/checkout@v4

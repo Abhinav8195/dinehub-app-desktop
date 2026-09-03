@@ -1,26 +1,54 @@
 import Store from 'electron-store'
 import { randomUUID } from 'crypto'
-import { safeStorage } from 'electron'
+import { safeStorage, app } from 'electron'
+import { copyFileSync, existsSync, mkdirSync } from 'fs'
+import { dirname, join } from 'path'
 
 interface TokenPair {
   accessToken: string
   refreshToken: string
 }
 
-const secureStore = new Store({
-  name: 'dinehub-secure',
-  clearInvalidConfig: true
-})
+const APP_NAME = 'DiningHub'
+const LEGACY_APP_DATA_DIRS = ['Electron', 'dine-hub-desktop']
 
 const KEYS = {
   ACCESS_TOKEN: 'accessToken',
   REFRESH_TOKEN: 'refreshToken',
   TENANT_SLUG: 'tenantSlug',
-  DEVICE_ID: 'deviceId'
+  DEVICE_ID: 'deviceId',
+  CACHED_USER: 'cachedUser',
 } as const
 
-// One-time migration from releases that treated a restaurant slug as auth state.
-secureStore.delete(KEYS.TENANT_SLUG)
+let secureStore: Store | null = null
+
+function migrateLegacyStoreFile(): void {
+  app.setName(APP_NAME)
+  const userData = app.getPath('userData')
+  const targetFile = join(userData, 'dinehub-secure.json')
+  if (existsSync(targetFile)) return
+
+  const appData = app.getPath('appData')
+  for (const legacyName of LEGACY_APP_DATA_DIRS) {
+    const legacyFile = join(appData, legacyName, 'dinehub-secure.json')
+    if (existsSync(legacyFile)) {
+      mkdirSync(dirname(targetFile), { recursive: true })
+      copyFileSync(legacyFile, targetFile)
+      return
+    }
+  }
+}
+
+function getStore(): Store {
+  if (!secureStore) {
+    migrateLegacyStoreFile()
+    secureStore = new Store({
+      name: 'dinehub-secure',
+      clearInvalidConfig: true,
+    })
+  }
+  return secureStore
+}
 
 export function getAccessToken(): string | null {
   return readSecret(KEYS.ACCESS_TOKEN)
@@ -36,43 +64,86 @@ export function setTokens(tokens: TokenPair): void {
 }
 
 export function clearTokens(): void {
-  secureStore.delete(KEYS.ACCESS_TOKEN)
-  secureStore.delete(KEYS.REFRESH_TOKEN)
+  const store = getStore()
+  store.delete(KEYS.ACCESS_TOKEN)
+  store.delete(KEYS.REFRESH_TOKEN)
+  store.delete(KEYS.CACHED_USER)
 }
 
 export function getTenantSlug(): string | null {
-  return secureStore.get(KEYS.TENANT_SLUG) as string | null
+  const slug = getStore().get(KEYS.TENANT_SLUG)
+  return typeof slug === 'string' && slug.length > 0 ? slug : null
 }
 
 export function setTenantSlug(slug: string): void {
-  secureStore.set(KEYS.TENANT_SLUG, slug)
+  getStore().set(KEYS.TENANT_SLUG, slug)
 }
 
 export function getDeviceId(): string {
-  let deviceId = secureStore.get(KEYS.DEVICE_ID) as string | undefined
+  const store = getStore()
+  let deviceId = store.get(KEYS.DEVICE_ID) as string | undefined
   if (!deviceId) {
     deviceId = randomUUID()
-    secureStore.set(KEYS.DEVICE_ID, deviceId)
+    store.set(KEYS.DEVICE_ID, deviceId)
   }
   return deviceId
 }
 
+export function getCachedUser(): Record<string, unknown> | null {
+  const cached = getStore().get(KEYS.CACHED_USER)
+  return cached && typeof cached === 'object' && !Array.isArray(cached)
+    ? cached as Record<string, unknown>
+    : null
+}
+
+export function setCachedUser(user: Record<string, unknown>): void {
+  getStore().set(KEYS.CACHED_USER, user)
+}
+
+function looksLikeJwt(value: string): boolean {
+  return value.startsWith('eyJ') && value.split('.').length === 3
+}
+
 function writeSecret(key: string, value: string): void {
-  if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error('Secure credential storage is unavailable on this device')
+  const store = getStore()
+  if (safeStorage.isEncryptionAvailable()) {
+    store.set(key, safeStorage.encryptString(value).toString('base64'))
+    return
   }
-  secureStore.set(key, safeStorage.encryptString(value).toString('base64'))
+  // Keep sessions working when OS keychain is unavailable (common on some Windows setups).
+  store.set(key, value)
 }
 
 function readSecret(key: string): string | null {
-  const encrypted = secureStore.get(key)
-  if (typeof encrypted !== 'string' || !encrypted) return null
+  const stored = getStore().get(key)
+  if (typeof stored !== 'string' || !stored) return null
+
+  if (looksLikeJwt(stored)) {
+    return stored
+  }
+
+  if (!safeStorage.isEncryptionAvailable()) {
+    getStore().delete(key)
+    return null
+  }
+
   try {
-    return safeStorage.decryptString(Buffer.from(encrypted, 'base64'))
+    const decrypted = safeStorage.decryptString(Buffer.from(stored, 'base64'))
+    if (looksLikeJwt(decrypted)) {
+      return decrypted
+    }
+    getStore().delete(key)
+    return null
   } catch {
-    // Old releases stored tokens with an application-wide key. Do not expose or
-    // migrate those values; require a new login into OS-backed storage instead.
-    secureStore.delete(key)
+    if (looksLikeJwt(stored)) {
+      try {
+        writeSecret(key, stored)
+      } catch {
+        return stored
+      }
+      return stored
+    }
+    getStore().delete(key)
     return null
   }
 }

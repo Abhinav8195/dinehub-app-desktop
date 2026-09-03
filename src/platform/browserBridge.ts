@@ -1,8 +1,9 @@
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1').replace(/\/$/, '')
+const API_BASE = (import.meta.env.VITE_API_URL || 'https://dininghub.in/api/v1').replace(/\/$/, '')
 const ACCESS = 'dinehub.web.access'
 const REFRESH = 'dinehub.web.refresh'
 const TENANT = 'dinehub.web.tenant'
 const DEVICE = 'dinehub.web.device'
+const CACHED_USER = 'dinehub.web.cachedUser'
 
 /** Persist login until explicit logout (sessionStorage cleared on tab close). */
 const authStorage = {
@@ -45,6 +46,35 @@ function tokensFrom(data: unknown) {
 function clearAuthTokens() {
   authStorage.remove(ACCESS)
   authStorage.remove(REFRESH)
+  authStorage.remove(CACHED_USER)
+}
+
+function cacheUserFromResponse(path: string, data: unknown) {
+  if (
+    !path.startsWith('/auth/login')
+    && path !== '/auth/me'
+    && !path.startsWith('/auth/otp/')
+    && !path.startsWith('/auth/pin/login')
+  ) {
+    return
+  }
+  const user = (data as { data?: { user?: Record<string, unknown> } })?.data?.user
+  if (user && typeof user === 'object') {
+    authStorage.set(CACHED_USER, JSON.stringify(user))
+  }
+}
+
+function getCachedUser(): Record<string, unknown> | null {
+  const raw = authStorage.get(CACHED_USER)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
 }
 
 async function parse(response: Response, responseType?: string) {
@@ -93,6 +123,7 @@ async function requestDineHub(request: any) {
       }
     }
     tokensFrom(result.parsed.data)
+    cacheUserFromResponse(String(request.path || ''), result.parsed.data)
     if (!result.response.ok) {
       const body = result.parsed.data as any
       return { ok: false, error: { statusCode: result.response.status, message: body?.message || 'Request failed', errors: body?.errors, path: request.path } }
@@ -255,6 +286,7 @@ export function installBrowserBridge() {
   ;(window as any).electronAPI = {
     requestDineHub,
     hasSession: async () => Boolean(authStorage.get(ACCESS) && authStorage.get(REFRESH)),
+    getCachedUser: async () => getCachedUser(),
     clearTokens: async () => { clearAuthTokens() },
     getTenantSlug: async () => authStorage.get(TENANT),
     setTenantSlug: async (slug: string) => { authStorage.set(TENANT, slug) },

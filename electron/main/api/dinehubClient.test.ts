@@ -14,6 +14,7 @@ const clearTokens = vi.hoisted(() => vi.fn(() => {
   credentials.accessToken = null
   credentials.refreshToken = null
 }))
+const setCachedUser = vi.hoisted(() => vi.fn())
 
 vi.mock('../store/secureStore', () => ({
   getAccessToken: () => credentials.accessToken,
@@ -21,6 +22,7 @@ vi.mock('../store/secureStore', () => ({
   getTenantSlug: () => credentials.tenantSlug,
   setTenantSlug: (slug: string) => { credentials.tenantSlug = slug },
   setTokens,
+  setCachedUser,
   clearTokens
 }))
 

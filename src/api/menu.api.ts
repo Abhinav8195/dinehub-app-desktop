@@ -5,7 +5,7 @@ import type {
   MenuItem, MenuItemVariant, MenuItemVariantInput, UpdateCategoryBody, UpdateMenuItemBody
 } from './types/menu.types'
 
-const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'
+const apiBaseUrl = import.meta.env.VITE_API_URL || 'https://dininghub.in/api/v1'
 const serverOrigin = new URL(apiBaseUrl).origin
 
 export function resolveMenuImageUrl(imageUrl: string | null | undefined): string | null {

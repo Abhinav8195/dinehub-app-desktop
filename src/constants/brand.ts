@@ -23,7 +23,7 @@ export const BRAND = {
   },
   urls: {
     menu: 'https://menu.dininghub.in',
-    website: 'http://localhost:3000'
+    website: 'https://dininghub.in'
   }
 } as const
 

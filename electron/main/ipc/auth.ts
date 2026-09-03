@@ -1,13 +1,14 @@
 import { ipcMain, shell } from 'electron'
 import { app } from 'electron'
 import {
-  clearTokens, getTenantSlug, setTenantSlug, getDeviceId
+  clearTokens, getCachedUser, getTenantSlug, setTenantSlug, getDeviceId
 } from '../store/secureStore'
 import { getMainWindow } from '../window'
 import { printHtmlDocument } from '../print-html'
 
 export function registerAuthIpcHandlers(): void {
   ipcMain.handle('auth:clearTokens', () => clearTokens())
+  ipcMain.handle('auth:getCachedUser', () => getCachedUser())
   ipcMain.handle('auth:getTenantSlug', () => getTenantSlug())
   ipcMain.handle('auth:setTenantSlug', (_, slug: string) => setTenantSlug(slug))
   ipcMain.handle('auth:getDeviceId', () => getDeviceId())

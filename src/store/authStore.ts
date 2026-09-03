@@ -3,6 +3,7 @@ import type { AuthUser } from '@/api/types/auth.types'
 import { authApi } from '@/api/auth.api'
 import { tokenBridge, onAuthExpired } from '@/api/client'
 import { ApiError } from '@/api/types/common'
+import { mapUser } from '@/lib/mappers/auth.mapper'
 import { matchPermission } from '@/lib/permissions'
 import { tenantsApi } from '@/api/tenants.api'
 import {
@@ -203,14 +204,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           const sessionRejected = error instanceof ApiError &&
             (error.statusCode === 401 || error.statusCode === 403)
           if (sessionRejected) {
-            // Access/refresh rejected — force login. Never stay "authenticated" without a user
-            // (that left FeatureAccessBoundary stuck on the splash forever).
-            await tokenBridge.clearTokens().catch(() => {})
-            set({ user: null, isAuthenticated: false, features: {}, featuresStatus: 'idle', featuresError: null })
+            const stillSignedIn = await tokenBridge.hasSession().catch(() => false)
+            if (!stillSignedIn) {
+              await tokenBridge.clearTokens().catch(() => {})
+              set({ user: null, isAuthenticated: false, features: {}, featuresStatus: 'idle', featuresError: null })
+            } else {
+              const cached = await tokenBridge.getCachedUser().catch(() => null)
+              if (cached) {
+                const user = mapUser(cached as never)
+                await get().loadFeatures(user)
+                set({ user, isAuthenticated: true })
+              } else {
+                set({ user: null, isAuthenticated: false })
+              }
+            }
           } else {
-            // Offline / temporary server failure: keep tokens only with a soft session.
-            // Never mark authenticated without a user — AuthGuard would bounce forever.
-            set({ user: null, isAuthenticated: false })
+            const cached = await tokenBridge.getCachedUser().catch(() => null)
+            if (cached) {
+              const user = mapUser(cached as never)
+              await get().loadFeatures(user)
+              set({ user, isAuthenticated: true })
+            } else {
+              set({ user: null, isAuthenticated: false })
+            }
           }
         }
       } else {

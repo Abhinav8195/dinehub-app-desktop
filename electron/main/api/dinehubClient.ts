@@ -1,4 +1,6 @@
-import { getAccessToken, getRefreshToken, setTokens, clearTokens } from '../store/secureStore'
+import {
+  getAccessToken, getRefreshToken, setTokens, clearTokens, setCachedUser
+} from '../store/secureStore'
 
 export type ApiMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 export type DesktopResponseType = 'json' | 'text' | 'arraybuffer' | 'blob'
@@ -36,7 +38,7 @@ export interface MenuImageUpload {
 const baseUrl = (
   process.env.DINEHUB_API_URL ||
   import.meta.env.MAIN_VITE_API_URL ||
-  'http://localhost:3000/api/v1'
+  'https://dininghub.in/api/v1'
 ).replace(/\/$/, '')
 const debugApi = import.meta.env.DEV || process.env.DINEHUB_API_DEBUG === '1'
 
@@ -279,12 +281,28 @@ export async function requestDineHub(request: ApiRequest): Promise<unknown> {
   return (await requestDineHubTransport(request)).data
 }
 
+function cacheUserFromResponse(path: string, payload: unknown): void {
+  if (
+    !path.startsWith('/auth/login')
+    && path !== '/auth/me'
+    && !path.startsWith('/auth/otp/')
+    && !path.startsWith('/auth/pin/login')
+  ) {
+    return
+  }
+  const user = (payload as { data?: { user?: Record<string, unknown> } }).data?.user
+  if (user && typeof user === 'object') {
+    setCachedUser(user)
+  }
+}
+
 export async function requestDineHubTransport(request: ApiRequest): Promise<DesktopApiResponse> {
   assertRequest(request)
   const result = await send(request, getAccessToken())
   const payload = result.data
   const tokens = (payload as { data?: { tokens?: { accessToken?: string; refreshToken?: string } } }).data?.tokens
   if (tokens?.accessToken && tokens.refreshToken) setTokens({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken })
+  cacheUserFromResponse(request.path, payload)
   return result
 }
 
