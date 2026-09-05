@@ -123,27 +123,15 @@ function readSecret(key: string): string | null {
   }
 
   if (!safeStorage.isEncryptionAvailable()) {
-    getStore().delete(key)
-    return null
+    return stored
   }
 
   try {
     const decrypted = safeStorage.decryptString(Buffer.from(stored, 'base64'))
-    if (looksLikeJwt(decrypted)) {
-      return decrypted
-    }
-    getStore().delete(key)
-    return null
+    return decrypted || null
   } catch {
-    if (looksLikeJwt(stored)) {
-      try {
-        writeSecret(key, stored)
-      } catch {
-        return stored
-      }
-      return stored
-    }
-    getStore().delete(key)
+    // Never delete credentials on decrypt glitches — keep raw value if it still looks usable.
+    if (looksLikeJwt(stored)) return stored
     return null
   }
 }

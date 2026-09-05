@@ -9,6 +9,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const user = useAuthStore((s) => s.user)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const loadFeatures = useAuthStore((s) => s.loadFeatures)
+  const fetchMe = useAuthStore((s) => s.fetchMe)
 
   useEffect(() => {
     initialize()
@@ -23,6 +24,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     return () => disconnectSocket()
   }, [isAuthenticated, user?.tenantId])
+
+  // Quiet keep-alive — never force logout on failure (Sign Out only).
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const keepAlive = () => {
+      void fetchMe().catch(() => {})
+    }
+    const timer = window.setInterval(keepAlive, 10 * 60 * 1000)
+    window.addEventListener('online', keepAlive)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') keepAlive()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('online', keepAlive)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [isAuthenticated, fetchMe])
 
   useEffect(() => {
     if (!isAuthenticated) return

@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import type { AuthUser } from '@/api/types/auth.types'
 import { authApi } from '@/api/auth.api'
 import { tokenBridge, onAuthExpired } from '@/api/client'
-import { ApiError } from '@/api/types/common'
 import { mapUser } from '@/lib/mappers/auth.mapper'
 import { matchPermission } from '@/lib/permissions'
 import { tenantsApi } from '@/api/tenants.api'
@@ -195,42 +194,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true })
     try {
       const hasSession = await tokenBridge.hasSession()
-      if (hasSession) {
-        try {
-          const user = await authApi.me()
-          await get().loadFeatures(user)
-          set({ user, isAuthenticated: true })
-        } catch (error) {
-          const sessionRejected = error instanceof ApiError &&
-            (error.statusCode === 401 || error.statusCode === 403)
-          if (sessionRejected) {
-            const stillSignedIn = await tokenBridge.hasSession().catch(() => false)
-            if (!stillSignedIn) {
-              await tokenBridge.clearTokens().catch(() => {})
-              set({ user: null, isAuthenticated: false, features: {}, featuresStatus: 'idle', featuresError: null })
-            } else {
-              const cached = await tokenBridge.getCachedUser().catch(() => null)
-              if (cached) {
-                const user = mapUser(cached as never)
-                await get().loadFeatures(user)
-                set({ user, isAuthenticated: true })
-              } else {
-                set({ user: null, isAuthenticated: false })
-              }
-            }
-          } else {
-            const cached = await tokenBridge.getCachedUser().catch(() => null)
-            if (cached) {
-              const user = mapUser(cached as never)
-              await get().loadFeatures(user)
-              set({ user, isAuthenticated: true })
-            } else {
-              set({ user: null, isAuthenticated: false })
-            }
-          }
-        }
-      } else {
+      const cachedRaw = await tokenBridge.getCachedUser().catch(() => null)
+
+      if (!hasSession && !cachedRaw) {
         set({ user: null, isAuthenticated: false })
+        return
+      }
+
+      const restoreCached = async () => {
+        if (!cachedRaw) return false
+        const user = mapUser(cachedRaw as never)
+        await get().loadFeatures(user)
+        set({ user, isAuthenticated: true })
+        return true
+      }
+
+      try {
+        const user = await authApi.me()
+        await get().loadFeatures(user)
+        set({ user, isAuthenticated: true })
+      } catch {
+        // Hard refresh / offline / expired access: keep the person signed in from
+        // the last known profile until they click Sign Out.
+        if (!(await restoreCached())) {
+          set({ user: null, isAuthenticated: false })
+        }
       }
     } catch {
       set({ user: null, isAuthenticated: false })
@@ -240,10 +228,5 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   }
 }))
 
-// Listen for confirmed session death (refresh failed / tokens cleared)
-onAuthExpired(() => {
-  import('@/api/settings.api').then(({ clearRestaurantSettingsCache }) => clearRestaurantSettingsCache()).catch(() => {})
-  void tokenBridge.clearTokens().catch(() => {})
-  useAuthStore.getState().setUser(null)
-  useAuthStore.setState({ isAuthenticated: false, features: {}, featuresStatus: 'idle', featuresError: null })
-})
+// Never auto-logout from API signals — only explicit Sign Out clears the session.
+onAuthExpired(() => {})

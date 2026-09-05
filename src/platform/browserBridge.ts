@@ -37,9 +37,9 @@ function deviceId() {
 function tokensFrom(data: unknown) {
   const value = data as { data?: { tokens?: { accessToken?: string; refreshToken?: string } } }
   const tokens = value?.data?.tokens
-  if (tokens?.accessToken && tokens.refreshToken) {
+  if (tokens?.accessToken) {
     authStorage.set(ACCESS, tokens.accessToken)
-    authStorage.set(REFRESH, tokens.refreshToken)
+    if (tokens.refreshToken) authStorage.set(REFRESH, tokens.refreshToken)
   }
 }
 
@@ -50,17 +50,26 @@ function clearAuthTokens() {
 }
 
 function cacheUserFromResponse(path: string, data: unknown) {
-  if (
-    !path.startsWith('/auth/login')
-    && path !== '/auth/me'
-    && !path.startsWith('/auth/otp/')
-    && !path.startsWith('/auth/pin/login')
-  ) {
+  const body = data as { data?: Record<string, unknown> | null }
+  const payload = body?.data
+  if (!payload || typeof payload !== 'object') return
+
+  if (path === '/auth/me' || path.startsWith('/auth/me?')) {
+    if (typeof payload.id === 'string' || typeof payload.email === 'string') {
+      authStorage.set(CACHED_USER, JSON.stringify(payload))
+    }
     return
   }
-  const user = (data as { data?: { user?: Record<string, unknown> } })?.data?.user
-  if (user && typeof user === 'object') {
-    authStorage.set(CACHED_USER, JSON.stringify(user))
+
+  if (
+    path.startsWith('/auth/login')
+    || path.startsWith('/auth/otp/')
+    || path.startsWith('/auth/pin/login')
+  ) {
+    const user = payload.user
+    if (user && typeof user === 'object') {
+      authStorage.set(CACHED_USER, JSON.stringify(user))
+    }
   }
 }
 
@@ -107,19 +116,20 @@ async function rawRequest(request: any, accessToken = authStorage.get(ACCESS)) {
 async function requestDineHub(request: any) {
   try {
     let result = await rawRequest(request)
-    if (result.response.status === 401 && !String(request.path || '').startsWith('/auth/login') && !String(request.path || '').startsWith('/auth/refresh') && !String(request.path || '').startsWith('/auth/register')) {
+    if (
+      result.response.status === 401
+      && !String(request.path || '').startsWith('/auth/login')
+      && !String(request.path || '').startsWith('/auth/refresh')
+      && !String(request.path || '').startsWith('/auth/register')
+    ) {
       const refreshToken = authStorage.get(REFRESH)
       if (refreshToken) {
         const refresh = await rawRequest({ method: 'POST', path: '/auth/refresh', body: { refreshToken } }, null)
         if (refresh.response.ok) {
           tokensFrom(refresh.parsed.data)
           result = await rawRequest(request)
-        } else {
-          // Refresh rejected — end the lasting session so the UI can return to login.
-          clearAuthTokens()
         }
-      } else {
-        clearAuthTokens()
+        // Keep tokens on refresh failure — Sign Out only clears the session.
       }
     }
     tokensFrom(result.parsed.data)
@@ -285,7 +295,7 @@ export function installBrowserBridge() {
   const noopUnsubscribe = () => () => {}
   ;(window as any).electronAPI = {
     requestDineHub,
-    hasSession: async () => Boolean(authStorage.get(ACCESS) && authStorage.get(REFRESH)),
+    hasSession: async () => Boolean(authStorage.get(ACCESS) || authStorage.get(REFRESH)),
     getCachedUser: async () => getCachedUser(),
     clearTokens: async () => { clearAuthTokens() },
     getTenantSlug: async () => authStorage.get(TENANT),

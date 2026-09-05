@@ -133,29 +133,44 @@ async function refreshAccessToken(): Promise<string> {
     refreshState.reject = reject
 
     const doRefresh = async () => {
+      const refreshTokenAtStart = getRefreshToken()
       try {
-        const refreshToken = getRefreshToken()
-        if (!refreshToken) {
+        if (!refreshTokenAtStart) {
           throw { statusCode: 401, message: 'Your session has expired. Please sign in again.' } satisfies ApiFailure
         }
-        const response = await fetch(buildUrl('/auth/refresh'), {
+        const refreshUrl = buildUrl('/auth/refresh')
+        logRequest('POST', refreshUrl)
+        const response = await fetch(refreshUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ refreshToken })
+          body: JSON.stringify({ refreshToken: refreshTokenAtStart, refresh_token: refreshTokenAtStart })
         })
+        logResponse('POST', refreshUrl, response.status)
         const result = await parseResponse(response)
-        const payload = result.data as { data?: { tokens?: { accessToken?: string; refreshToken?: string } } }
-        const tokens = payload.data?.tokens
-        if (!tokens?.accessToken || !tokens.refreshToken) {
+        const payload = result.data as Record<string, unknown> | null
+        const data = (payload?.data && typeof payload.data === 'object' ? payload.data : payload) as Record<string, unknown> | null
+        const nested = data?.tokens && typeof data.tokens === 'object' ? data.tokens as Record<string, unknown> : null
+        const accessToken = [
+          nested?.accessToken,
+          nested?.access_token,
+          data?.accessToken,
+          data?.access_token,
+        ].find((value): value is string => typeof value === 'string' && value.length > 0)
+        const nextRefresh = [
+          nested?.refreshToken,
+          nested?.refresh_token,
+          data?.refreshToken,
+          data?.refresh_token,
+          refreshTokenAtStart,
+        ].find((value): value is string => typeof value === 'string' && value.length > 0)
+        if (!accessToken || !nextRefresh) {
           throw { statusCode: 401, message: 'Invalid refresh response' } satisfies ApiFailure
         }
-        setTokens({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken })
-        refreshState.resolve?.(tokens.accessToken)
+        setTokens({ accessToken, refreshToken: nextRefresh })
+        refreshState.resolve?.(accessToken)
       } catch (error) {
-        const statusCode = (error as Partial<ApiFailure> | null)?.statusCode
-        if (statusCode === 401 || statusCode === 403) {
-          clearTokens()
-        }
+        // Keep credentials on refresh failure — hard refresh / brief API outages must
+        // not force logout. Only explicit Sign Out clears tokens.
         refreshState.reject?.(error)
       } finally {
         refreshState.promise = null
@@ -282,17 +297,26 @@ export async function requestDineHub(request: ApiRequest): Promise<unknown> {
 }
 
 function cacheUserFromResponse(path: string, payload: unknown): void {
-  if (
-    !path.startsWith('/auth/login')
-    && path !== '/auth/me'
-    && !path.startsWith('/auth/otp/')
-    && !path.startsWith('/auth/pin/login')
-  ) {
+  const body = payload as { data?: Record<string, unknown> | null }
+  const data = body?.data
+  if (!data || typeof data !== 'object') return
+
+  if (path === '/auth/me' || path.startsWith('/auth/me?')) {
+    if (typeof data.id === 'string' || typeof data.email === 'string') {
+      setCachedUser(data)
+    }
     return
   }
-  const user = (payload as { data?: { user?: Record<string, unknown> } }).data?.user
-  if (user && typeof user === 'object') {
-    setCachedUser(user)
+
+  if (
+    path.startsWith('/auth/login')
+    || path.startsWith('/auth/otp/')
+    || path.startsWith('/auth/pin/login')
+  ) {
+    const user = data.user
+    if (user && typeof user === 'object' && !Array.isArray(user)) {
+      setCachedUser(user as Record<string, unknown>)
+    }
   }
 }
 
@@ -301,7 +325,12 @@ export async function requestDineHubTransport(request: ApiRequest): Promise<Desk
   const result = await send(request, getAccessToken())
   const payload = result.data
   const tokens = (payload as { data?: { tokens?: { accessToken?: string; refreshToken?: string } } }).data?.tokens
-  if (tokens?.accessToken && tokens.refreshToken) setTokens({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken })
+  if (tokens?.accessToken) {
+    setTokens({
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken || getRefreshToken() || tokens.accessToken,
+    })
+  }
   cacheUserFromResponse(request.path, payload)
   return result
 }
@@ -350,6 +379,6 @@ export async function uploadMenuImage(
 }
 
 export const session = {
-  hasSession: () => Boolean(getAccessToken() && getRefreshToken()),
+  hasSession: () => Boolean(getAccessToken() || getRefreshToken()),
   clear: clearTokens
 }

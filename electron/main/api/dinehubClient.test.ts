@@ -81,7 +81,7 @@ describe('main-process DiningHub client', () => {
     expect(setTokens).toHaveBeenCalledWith({ accessToken: 'fresh', refreshToken: 'fresh-r' })
   })
 
-  it('clears the session when refresh fails', async () => {
+  it('keeps the session when refresh fails', async () => {
     vi.mocked(fetch).mockImplementation(async (input) =>
       String(input).endsWith('/auth/refresh') ? json({ message: 'Refresh expired' }, 401) : json({ message: 'Expired' }, 401)
     )
@@ -89,7 +89,8 @@ describe('main-process DiningHub client', () => {
       statusCode: 401,
       message: 'Refresh expired'
     })
-    expect(clearTokens).toHaveBeenCalled()
+    expect(clearTokens).not.toHaveBeenCalled()
+    expect(credentials.refreshToken).toBe('refresh-old')
   })
 
   it('keeps the session when token refresh has a temporary server failure', async () => {

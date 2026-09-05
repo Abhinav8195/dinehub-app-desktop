@@ -22,7 +22,8 @@ import { settingsApi } from '@/api/settings.api'
 import { formatApiError } from '@/api/management-utils'
 import { useTaxSettings } from '@/hooks/useTaxSettings'
 import { useAuth } from '@/hooks/useAuth'
-import { withOfflineCache } from '@/lib/offline'
+import { checkOnline } from '@/api/client'
+import { withOfflineCache, enqueueSync, isNetworkFailure } from '@/lib/offline'
 import { APP_BASE } from '@/constants/navigation'
 import { CheckoutModal } from './components/CheckoutModal'
 import { ModifierSelectionDialog } from './components/ModifierSelectionDialog'
@@ -341,26 +342,112 @@ export default function POSPage() {
       const table = tables.find((row) => row.id === selectedTableId)
       const boundOrderId = activeOrderId || table?.currentOrder?.id || null
 
+      const createPayload = {
+        type: orderType === 'dine-in' ? 'DINE_IN' as const : orderType === 'delivery' ? 'DELIVERY' as const : 'TAKEAWAY' as const,
+        items,
+        tableId: orderType === 'dine-in' ? selectedTableId || undefined : undefined,
+        firstName: meta.customerName.split(/\s+/)[0] || undefined,
+        lastName: meta.customerName.split(/\s+/).slice(1).join(' ') || undefined,
+        phone: meta.customerPhone || undefined,
+        instructions: [
+          orderType === 'delivery' ? meta.deliveryAddress : '',
+          meta.deliveryNotes,
+          meta.waiterName ? `Waiter: ${meta.waiterName}` : '',
+          meta.guestCount ? `Guests: ${meta.guestCount}` : '',
+          'KOT — payment pending',
+        ].filter(Boolean).join(' · ') || undefined,
+      }
+
+      const buildOfflineKotOrder = (): PosOrder => {
+        const id = boundOrderId || crypto.randomUUID()
+        const orderNumber = boundOrderId && activeOrderNumber && !activeOrderNumber.startsWith('OFF-')
+          ? activeOrderNumber
+          : `OFF-${Date.now().toString().slice(-6)}`
+        const now = new Date().toISOString()
+        const subtotal = pending.reduce((sum, line) => sum + line.price * line.quantity, 0)
+        return {
+          id,
+          orderNumber,
+          type: createPayload.type,
+          status: 'confirmed',
+          subtotal,
+          gstAmount: 0,
+          sgstAmount: 0,
+          cgstAmount: 0,
+          serviceCharge: 0,
+          discount: 0,
+          voucherDiscount: 0,
+          total: subtotal,
+          tax: 0,
+          instructions: createPayload.instructions || null,
+          paymentMethod: null,
+          paymentStatus: 'pending',
+          tableId: selectedTableId,
+          table: table
+            ? { id: table.id, label: `T-${table.number}`, number: table.number, floor: table.floor }
+            : null,
+          customer: meta.customerName || meta.customerPhone
+            ? {
+                id: `local-${id}`,
+                name: meta.customerName || 'Walk-in',
+                phone: meta.customerPhone || '',
+                email: null,
+              }
+            : null,
+          items: pending.map((line) => ({
+            id: line.id,
+            menuItemId: line.menuItemId,
+            variantId: line.variantId,
+            variantName: line.variantName,
+            comboId: line.comboId,
+            name: line.name,
+            quantity: line.quantity,
+            price: line.price,
+            total: line.price * line.quantity,
+            notes: line.notes,
+            modifiers: line.modifiers ?? [],
+          })),
+          createdAt: now,
+          updatedAt: now,
+        }
+      }
+
+      const saveKotOffline = async () => {
+        if (boundOrderId) {
+          await enqueueSync({
+            method: 'POST',
+            url: `/orders/${boundOrderId}/items`,
+            body: { items },
+            resource: 'orders',
+            operation: 'update',
+          })
+        } else {
+          await enqueueSync({
+            method: 'POST',
+            url: '/orders',
+            body: createPayload,
+            resource: 'orders',
+            operation: 'create',
+          })
+        }
+        return buildOfflineKotOrder()
+      }
+
       let order: PosOrder
-      if (boundOrderId) {
-        order = await ordersApi.addItems(boundOrderId, { items })
+      const online = await checkOnline().catch(() => navigator.onLine)
+      if (!online) {
+        order = await saveKotOffline()
       } else {
-        order = await ordersApi.create({
-          type: orderType === 'dine-in' ? 'DINE_IN' : orderType === 'delivery' ? 'DELIVERY' : 'TAKEAWAY',
-          items,
-          tableId: orderType === 'dine-in' ? selectedTableId || undefined : undefined,
-          firstName: meta.customerName.split(/\s+/)[0] || undefined,
-          lastName: meta.customerName.split(/\s+/).slice(1).join(' ') || undefined,
-          phone: meta.customerPhone || undefined,
-          instructions: [
-            orderType === 'delivery' ? meta.deliveryAddress : '',
-            meta.deliveryNotes,
-            meta.waiterName ? `Waiter: ${meta.waiterName}` : '',
-            meta.guestCount ? `Guests: ${meta.guestCount}` : '',
-            'KOT — payment pending',
-          ].filter(Boolean).join(' · ') || undefined,
-          // No paymentMethod → unpaid running order; kitchen gets the ticket.
-        })
+        try {
+          if (boundOrderId) {
+            order = await ordersApi.addItems(boundOrderId, { items })
+          } else {
+            order = await ordersApi.create(createPayload)
+          }
+        } catch (error) {
+          if (!isNetworkFailure(error)) throw error
+          order = await saveKotOffline()
+        }
       }
 
       dispatch(setActiveOrder({ id: order.id, orderNumber: order.orderNumber }))
@@ -375,14 +462,18 @@ export default function POSPage() {
       dispatch(markKotSent(pending.map((line) => line.lineKey)))
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       queryClient.invalidateQueries({ queryKey: ['tables'] })
+      const offline = order.orderNumber.startsWith('OFF-')
       toast.success(
         alsoPrint
-          ? `KOT + print · ${order.orderNumber}`
-          : orderType === 'dine-in' && selectedTableId
-            ? `KOT sent · ${order.orderNumber} · table booked — add more anytime`
-            : `KOT sent · ${order.orderNumber}`,
+          ? offline
+            ? `Offline KOT + print · ${order.orderNumber} (syncs when online)`
+            : `KOT + print · ${order.orderNumber}`
+          : offline
+            ? `Offline KOT · ${order.orderNumber} (syncs when online)`
+            : orderType === 'dine-in' && selectedTableId
+              ? `KOT sent · ${order.orderNumber} · table booked — add more anytime`
+              : `KOT sent · ${order.orderNumber}`,
       )
-      // Back to table floor (all tables, including newly occupied).
       dispatch(startNewOrder())
     } catch (error) {
       toast.error(formatApiError(error, 'Could not send KOT'))

@@ -106,6 +106,18 @@ function toMutation(item: SyncQueueItem): SyncMutation | null {
       payload: item.body as Record<string, unknown>,
     }
   }
+  if (item.url.startsWith('/orders/') && item.url.endsWith('/items') && item.method === 'POST' && item.body && typeof item.body === 'object') {
+    return {
+      resource: 'orders',
+      operation: 'update',
+      key: item.id,
+      payload: {
+        ...(item.body as Record<string, unknown>),
+        orderId: item.url.split('/')[2],
+        action: 'add_items',
+      },
+    }
+  }
   if (item.url.startsWith('/orders/') && item.method === 'PATCH' && item.body && typeof item.body === 'object') {
     return {
       resource: 'orders',

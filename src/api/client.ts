@@ -77,13 +77,7 @@ const electronAdapter: AxiosAdapter = async (config) => {
       errors: result.error?.errors,
       path: result.error?.path
     })
-    // Only end the app session when credentials are actually gone (refresh failed).
-    // Permission / route 401s must not force logout — that was kicking users out mid-shift.
-    // 403 after tenant suspend also clears tokens in the main process refresh path.
-    if (error.statusCode === 401 || error.statusCode === 403) {
-      const stillSignedIn = await tokenBridge.hasSession().catch(() => false)
-      if (!stillSignedIn) notifyAuthExpired()
-    }
+    // Do not force logout from API errors — session ends only via Sign Out.
     throw error
   }
   const response = result.response ?? (Object.prototype.hasOwnProperty.call(result, 'payload') ? {
