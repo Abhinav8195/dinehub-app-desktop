@@ -40,7 +40,8 @@ export default function DashboardPage() {
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['dashboard', 'stats', tenantId],
     queryFn: () => dashboardApi.getStats(tenantId),
-    refetchInterval: 30_000,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
     enabled: Boolean(tenantId) && !featureAccess.isLoading && featureAccess.hasFeature('DASHBOARD'),
   })
 

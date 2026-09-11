@@ -5,7 +5,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, Search, Star, Pin } from 'lucid
 import { useDispatch, useSelector } from 'react-redux'
 import { BrandLogo } from '@/components/brand/BrandLogo'
 import { AppFooter } from '@/components/brand/AppFooter'
-import { NAVIGATION, type NavItem } from '@/constants/navigation'
+import { NAVIGATION, APP_BASE, type NavItem } from '@/constants/navigation'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -39,6 +39,7 @@ export function Sidebar() {
   const { hasFeature } = useFeatureAccess()
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string[]>(['menu', 'inventory', 'users', 'reports'])
+  const isPosRoute = location.pathname.startsWith(`${APP_BASE}/pos`)
   const { data: restaurant } = useQuery({ queryKey: ['settings', 'restaurant'], queryFn: settingsApi.getRestaurant, staleTime: 60_000 })
   // Show KOT / Kitchen whenever admin feature is on, restaurant KOT setting is on,
   // or staff already has kitchen/POS access (so the nav item is never "missing").
@@ -51,8 +52,9 @@ export function Sidebar() {
   const { data: dashboard } = useQuery({
     queryKey: ['dashboard', 'stats', tenantId],
     queryFn: () => dashboardApi.getStats(tenantId),
-    enabled: Boolean(tenantId),
-    refetchInterval: 30_000,
+    enabled: Boolean(tenantId) && !isPosRoute,
+    staleTime: 60_000,
+    refetchInterval: isPosRoute ? false : 60_000,
   })
 
   const navigationWithLiveBadges = useMemo(() => NAVIGATION.map((item) => {

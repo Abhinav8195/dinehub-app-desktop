@@ -121,18 +121,46 @@ export async function unwrapPaginated<T>(promise: Promise<{ data: ApiResponse<T[
   return { data: data.data, meta: data.meta }
 }
 
+const ONLINE_PROBE_TTL_MS = 30_000
+let onlineProbeCache: { ok: boolean; at: number } | null = null
+let onlineProbeInFlight: Promise<boolean> | null = null
+
 export async function checkOnline(): Promise<boolean> {
-  try {
-    await apiClient.get('/tenants/plans')
-    return true
-  } catch (error) {
-    // Any HTTP response (even 401/403/5xx) means the API host is reachable.
-    // statusCode 0 = no response / network failure → offline.
-    if (error instanceof ApiError) {
-      return error.statusCode > 0
-    }
-    return false
+  const now = Date.now()
+  if (onlineProbeCache && now - onlineProbeCache.at < ONLINE_PROBE_TTL_MS) {
+    return onlineProbeCache.ok
   }
+  if (onlineProbeInFlight) return onlineProbeInFlight
+
+  onlineProbeInFlight = (async () => {
+    try {
+      // Prefer lightweight /health (outside api prefix, not throttled) over /tenants/plans.
+      const origin = new URL(API_BASE_URL).origin
+      const response = await fetch(`${origin}/health`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(5_000),
+      })
+      const ok = response.status > 0
+      onlineProbeCache = { ok, at: Date.now() }
+      return ok
+    } catch {
+      try {
+        await apiClient.get('/tenants/plans', { timeout: 5_000 })
+        onlineProbeCache = { ok: true, at: Date.now() }
+        return true
+      } catch (error) {
+        // Any HTTP response (even 401/403/5xx) means the API host is reachable.
+        // statusCode 0 = no response / network failure → offline.
+        const ok = error instanceof ApiError ? error.statusCode > 0 : false
+        onlineProbeCache = { ok, at: Date.now() }
+        return ok
+      }
+    } finally {
+      onlineProbeInFlight = null
+    }
+  })()
+
+  return onlineProbeInFlight
 }
 
 export default apiClient

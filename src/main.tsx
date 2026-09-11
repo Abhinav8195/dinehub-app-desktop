@@ -19,15 +19,18 @@ installBrowserBridge()
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // Soft navigation must always refresh — a 5-minute stale cache made pages
-      // (Inventory, etc.) look empty until a hard refresh.
-      staleTime: 0,
+      // Soft-nav still refreshes when stale, but avoid hammering the API on every
+      // focus/remount (was causing HTTP 429 "Too many requests" on POS).
+      staleTime: 30_000,
       gcTime: 5 * 60 * 1000,
-      retry: 1,
-      // Avoid endless pending UI when a request hangs before our transport timeout.
+      retry: (failureCount, error) => {
+        const status = (error as { statusCode?: number } | null)?.statusCode
+        if (status === 429 || status === 401 || status === 403) return false
+        return failureCount < 1
+      },
       networkMode: 'always',
-      refetchOnMount: 'always',
-      refetchOnWindowFocus: true,
+      refetchOnMount: true,
+      refetchOnWindowFocus: false,
       refetchOnReconnect: true,
     },
     mutations: {

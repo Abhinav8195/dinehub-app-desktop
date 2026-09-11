@@ -101,12 +101,25 @@ export function useNotificationsSync(enabled: boolean) {
   const dispatch = useDispatch()
   const queryClient = useQueryClient()
   const lastBellAt = useRef(0)
+  const invalidateTimers = useRef<Map<string, number>>(new Map())
+
+  const softInvalidate = (queryKey: string[]) => {
+    const key = queryKey.join(':')
+    const existing = invalidateTimers.current.get(key)
+    if (existing) window.clearTimeout(existing)
+    const timer = window.setTimeout(() => {
+      invalidateTimers.current.delete(key)
+      void queryClient.invalidateQueries({ queryKey })
+    }, 750)
+    invalidateTimers.current.set(key, timer)
+  }
 
   const { data } = useQuery({
     queryKey: ['notifications'],
     queryFn: () => notificationsApi.list(),
     enabled,
-    refetchInterval: 60_000,
+    staleTime: 60_000,
+    refetchInterval: 120_000,
   })
 
   useEffect(() => {
@@ -126,8 +139,8 @@ export function useNotificationsSync(enabled: boolean) {
       const now = Date.now()
       // Debounce double emit (new_order + qr-order.created for the same QR sale)
       if (now - lastBellAt.current < 1500) {
-        queryClient.invalidateQueries({ queryKey: ['orders'] })
-        queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] })
+        softInvalidate(['orders'])
+        softInvalidate(['dashboard', 'stats'])
         return
       }
       lastBellAt.current = now
@@ -141,23 +154,23 @@ export function useNotificationsSync(enabled: boolean) {
         source === 'qr' ? 'New QR order' : 'New order',
         `${number} just came in`,
       ).catch(() => {})
-      queryClient.invalidateQueries({ queryKey: ['orders'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] })
-      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      softInvalidate(['orders'])
+      softInvalidate(['dashboard', 'stats'])
+      softInvalidate(['notifications'])
     }
 
     const onNotification = (payload: NotificationItem) => {
       dispatch(addNotification(toNotification(payload)))
-      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      softInvalidate(['notifications'])
     }
 
     const onOrderUpdated = () => {
-      queryClient.invalidateQueries({ queryKey: ['orders'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] })
+      softInvalidate(['orders'])
+      softInvalidate(['dashboard', 'stats'])
     }
 
     const onWaiterRequested = (payload: unknown) => {
-      queryClient.invalidateQueries({ queryKey: ['waiter-requests'] })
+      softInvalidate(['waiter-requests'])
       const { motive, table, note } = parseWaiterPayload(payload)
       const title = table ? `Table ${table}` : 'Waiter call'
       const description = note
@@ -176,15 +189,15 @@ export function useNotificationsSync(enabled: boolean) {
     }
 
     const onWaiterUpdated = () => {
-      queryClient.invalidateQueries({ queryKey: ['waiter-requests'] })
+      softInvalidate(['waiter-requests'])
     }
 
     const onTableStatusUpdated = () => {
-      queryClient.invalidateQueries({ queryKey: ['tables'] })
+      softInvalidate(['tables'])
     }
 
     const onLowStockAlert = () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      softInvalidate(['inventory'])
     }
 
     // Register on the facade even before the socket finishes connecting
@@ -204,6 +217,10 @@ export function useNotificationsSync(enabled: boolean) {
       onSocketEvent('low_stock_alert', onLowStockAlert),
     ]
 
-    return () => unsubs.forEach((unsub) => unsub())
+    return () => {
+      unsubs.forEach((unsub) => unsub())
+      invalidateTimers.current.forEach((timer) => window.clearTimeout(timer))
+      invalidateTimers.current.clear()
+    }
   }, [enabled, dispatch, queryClient])
 }

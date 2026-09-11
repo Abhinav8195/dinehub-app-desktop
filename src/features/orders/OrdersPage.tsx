@@ -130,9 +130,9 @@ export default function OrdersPage() {
     queryFn: ({ signal }) => ordersApi.list(params, signal),
     staleTime: 0,
     gcTime: 60_000,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: true,
-    refetchInterval: 10_000,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
+    refetchInterval: 20_000,
   })
   const { data: branches = [] } = useQuery({ queryKey: ['branches'], queryFn: branchesApi.list })
 

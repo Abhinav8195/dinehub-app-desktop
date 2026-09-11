@@ -62,7 +62,8 @@ export default function TablesPage() {
   const { data: tables = [], isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['tables'],
     queryFn: () => withOfflineCache('tables', () => tablesApi.list()),
-    refetchInterval: 10_000,
+    staleTime: 30_000,
+    refetchInterval: 30_000,
   })
 
   /** Only floors that have tables — no empty "Ground Floor" tab when tables are on "Ground". */

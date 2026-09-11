@@ -62,7 +62,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     void flush()
     window.addEventListener('online', flush)
-    const timer = window.setInterval(() => void flush(), 30_000)
+    // Only poll sync queue every 60s — empty queues no longer hit the API.
+    const timer = window.setInterval(() => void flush(), 60_000)
     return () => {
       window.removeEventListener('online', flush)
       window.clearInterval(timer)

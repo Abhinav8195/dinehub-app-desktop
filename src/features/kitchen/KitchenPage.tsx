@@ -56,7 +56,8 @@ export default function KitchenPage() {
   const { data: allOrders = [], isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['orders'],
     queryFn: () => withOfflineCache('orders:list', () => ordersApi.list().then((result) => result.orders)),
-    refetchInterval: 15_000,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
   })
 
   const kitchenOrders = useMemo(

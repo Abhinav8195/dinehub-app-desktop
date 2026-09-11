@@ -25,7 +25,7 @@ export default function WaiterCallsPage() {
   const { data: waiterResult, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['waiter-requests'],
     queryFn: () => waiterRequestsApi.list(),
-    refetchInterval: 8_000,
+    refetchInterval: 30_000,
   })
   const { data: tables = [] } = useQuery({ queryKey: ['tables'], queryFn: tablesApi.list })
   const waiterRequests = waiterResult?.data ?? []

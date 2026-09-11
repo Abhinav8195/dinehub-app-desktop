@@ -243,6 +243,10 @@ export async function processSyncQueue(
 }
 
 export async function flushOfflineQueue(): Promise<number> {
+  // Skip reachability probe when there's nothing to sync.
+  const pending = await listSyncQueue().catch(() => [] as SyncQueueItem[])
+  if (pending.length === 0) return 0
+
   // Prefer a real API ping over navigator.onLine (desktop can be "offline" to WAN
   // but still reach the restaurant API — or the reverse).
   try {

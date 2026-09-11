@@ -136,7 +136,11 @@ export default function POSPage() {
   }
 
   const { data: taxSettings } = useTaxSettings()
-  const { data: restaurant } = useQuery({ queryKey: ['settings', 'restaurant'], queryFn: settingsApi.getRestaurant })
+  const { data: restaurant } = useQuery({
+    queryKey: ['settings', 'restaurant'],
+    queryFn: settingsApi.getRestaurant,
+    staleTime: 60_000,
+  })
 
   const { data: categories = [] } = useQuery({
     queryKey: ['menu-categories'],
@@ -144,26 +148,24 @@ export default function POSPage() {
     staleTime: 60_000,
   })
 
-  const { data: menuItems = [] } = useQuery({
-    queryKey: ['menu-items', selectedCategory],
-    queryFn: () => withOfflineCache(
-      `menu-items:${selectedCategory || 'all'}`,
-      () => menuApi.listItems(selectedCategory || undefined),
-    ),
-    staleTime: 60_000,
-  })
-
+  // Single menu catalog — filter by category / favorites / search client-side.
   const { data: allMenuItems = [] } = useQuery({
     queryKey: ['menu-items', 'all-for-search'],
     queryFn: () => withOfflineCache('menu-items:all', () => menuApi.listItems()),
     staleTime: 60_000,
   })
 
+  const menuItems = useMemo(() => {
+    if (!selectedCategory) return allMenuItems
+    return allMenuItems.filter((item) => item.categoryId === selectedCategory)
+  }, [allMenuItems, selectedCategory])
+
   const { data: tables = [] } = useQuery({
     queryKey: ['tables'],
     queryFn: () => withOfflineCache('tables', () => tablesApi.list()),
-    staleTime: 15_000,
-    refetchInterval: viewMode === 'tables' ? 10_000 : false,
+    staleTime: 30_000,
+    refetchInterval: viewMode === 'tables' ? 30_000 : false,
+    refetchOnWindowFocus: false,
   })
 
   // Do not auto-pick a table — New Order / post-KOT always show the floor plan
