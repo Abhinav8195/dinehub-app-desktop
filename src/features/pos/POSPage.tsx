@@ -491,12 +491,19 @@ export default function POSPage() {
     }
   }
 
-  const handleOrderSuccess = (orderNumber: string, total: number, paymentMethod: string, serverOrder?: PosOrder) => {
+  const handleOrderSuccess = async (orderNumber: string, total: number, paymentMethod: string, serverOrder?: PosOrder) => {
     const offline = orderNumber.startsWith('OFF-')
+    const paidTableId = selectedTableId || serverOrder?.tableId || serverOrder?.table?.id || null
+
+    // Always free the dine-in table after successful Save / Save & Print.
+    if (paidTableId && !offline && paymentMethod !== 'DUE') {
+      await tablesApi.updateStatus(paidTableId, 'AVAILABLE').catch(() => {})
+    }
+
     toast.success(
       offline
         ? `Offline order ${orderNumber} saved — ${formatCurrency(total)}`
-        : `Paid · ${orderNumber} · ${formatCurrency(total)}${selectedTableId ? ' · table available' : ''}`,
+        : `Paid · ${orderNumber} · ${formatCurrency(total)}${paidTableId ? ' · table free' : ''}`,
     )
     if (checkoutEbill) toast.message('eBill: share receipt from Orders when SMS/WhatsApp is enabled')
 
@@ -515,7 +522,7 @@ export default function POSPage() {
       tax: finalTax,
       discount: (serverOrder?.discount ?? 0) + discount,
       total,
-      tableId: selectedTableId || undefined,
+      tableId: paidTableId || undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }))
@@ -533,7 +540,7 @@ export default function POSPage() {
           gstin: typeof restaurant?.gstin === 'string' ? restaurant.gstin : undefined,
         },
         customerName: serverOrder?.customer?.name || meta.customerName || undefined,
-        table: serverOrder?.table?.label || (tables.find((t) => t.id === selectedTableId) ? tableDisplayLabel(tables.find((t) => t.id === selectedTableId)!) : undefined),
+        table: serverOrder?.table?.label || (tables.find((t) => t.id === paidTableId) ? tableDisplayLabel(tables.find((t) => t.id === paidTableId)!) : undefined),
         orderType: orderType === 'dine-in' ? 'Dine In' : orderType === 'delivery' ? 'Delivery' : 'Pick Up',
         items: cart.map((i) => ({
           name: `${i.name}${i.variantName ? ` (${i.variantName})` : ''}`,
@@ -565,6 +572,8 @@ export default function POSPage() {
     setQuickPay('CASH')
     queryClient.invalidateQueries({ queryKey: ['orders'] })
     queryClient.invalidateQueries({ queryKey: ['tables'] })
+    // Bypass sticky offline empty/stale table cache after payment.
+    void queryClient.refetchQueries({ queryKey: ['tables'] })
   }
 
   const lastLine = cart[cart.length - 1]
