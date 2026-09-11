@@ -70,8 +70,10 @@ describe('main-process DiningHub client', () => {
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input)
       if (url.endsWith('/auth/refresh')) return json({ success: true, data: { tokens: { accessToken: 'fresh', refreshToken: 'fresh-r' } } })
-      if (new Headers(init?.headers).get('Authorization') === 'Bearer access-old') return json({ message: 'Expired' }, 401)
-      return json({ success: true, data: [] })
+      const auth = new Headers(init?.headers).get('Authorization')
+      if (auth === 'Bearer access-old') return json({ message: 'Expired' }, 401)
+      if (auth === 'Bearer fresh') return json({ success: true, data: [] })
+      return json({ message: 'Unauthorized' }, 401)
     })
     await Promise.all([
       requestDineHub({ method: 'GET', path: '/menu/categories' }),
@@ -79,6 +81,10 @@ describe('main-process DiningHub client', () => {
     ])
     expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/auth/refresh'))).toHaveLength(1)
     expect(setTokens).toHaveBeenCalledWith({ accessToken: 'fresh', refreshToken: 'fresh-r' })
+    const authorizedRetries = vi.mocked(fetch).mock.calls.filter(([, init]) =>
+      new Headers(init?.headers).get('Authorization') === 'Bearer fresh'
+    )
+    expect(authorizedRetries.length).toBeGreaterThanOrEqual(2)
   })
 
   it('keeps the session when refresh fails', async () => {

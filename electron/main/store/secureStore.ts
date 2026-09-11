@@ -123,14 +123,14 @@ function readSecret(key: string): string | null {
   }
 
   if (!safeStorage.isEncryptionAvailable()) {
-    return stored
+    // Ciphertext is useless without the OS keychain — do not treat it as a token.
+    return null
   }
 
   try {
     const decrypted = safeStorage.decryptString(Buffer.from(stored, 'base64'))
     return decrypted || null
   } catch {
-    // Never delete credentials on decrypt glitches — keep raw value if it still looks usable.
     if (looksLikeJwt(stored)) return stored
     return null
   }

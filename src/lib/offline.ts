@@ -53,10 +53,19 @@ function openDB(): Promise<IDBDatabase> {
   })
 }
 
+function awaitTransaction(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed'))
+    tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'))
+  })
+}
+
 export async function cacheSet(key: string, data: unknown): Promise<void> {
   const db = await openDB()
   const tx = db.transaction('cache', 'readwrite')
   tx.objectStore('cache').put({ key, data, updatedAt: new Date().toISOString() })
+  await awaitTransaction(tx)
 }
 
 export async function cacheGet<T>(key: string): Promise<T | null> {
@@ -78,6 +87,7 @@ export async function enqueueSync(item: Omit<SyncQueueItem, 'id' | 'createdAt' |
   }
   const tx = db.transaction('syncQueue', 'readwrite')
   tx.objectStore('syncQueue').add(entry)
+  await awaitTransaction(tx)
 }
 
 export async function listSyncQueue(): Promise<SyncQueueItem[]> {
@@ -173,11 +183,13 @@ async function updateItemRetry(db: IDBDatabase, item: SyncQueueItem): Promise<vo
     lastAttemptAt: new Date().toISOString(),
   }
   tx.objectStore('syncQueue').put(updatedItem)
+  await awaitTransaction(tx)
 }
 
 async function deleteItem(db: IDBDatabase, id: string): Promise<void> {
   const tx = db.transaction('syncQueue', 'readwrite')
   tx.objectStore('syncQueue').delete(id)
+  await awaitTransaction(tx)
 }
 
 export async function processSyncQueue(
@@ -243,10 +255,18 @@ export async function flushOfflineQueue(): Promise<number> {
   return processSyncQueue()
 }
 
-/** Fetch online and seed IndexedDB; on network failure return last cached value. */
+/** Fetch online and seed IndexedDB; on network/timeout failure return last cached value. */
 export async function withOfflineCache<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
   try {
-    const data = await fetcher()
+    const data = await Promise.race([
+      fetcher(),
+      new Promise<never>((_, reject) => {
+        window.setTimeout(
+          () => reject({ statusCode: 0, message: 'Request timed out' }),
+          22_000,
+        )
+      }),
+    ])
     await cacheSet(key, data).catch(() => {})
     return data
   } catch (error) {

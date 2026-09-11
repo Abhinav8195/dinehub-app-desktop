@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import {
   addToCart, removeFromCart, updateQuantity, updateItemNotes, clearCart, replaceCartItem,
   setOrderType, holdOrder, resumeOrder, discardHeldOrder, setSelectedTable, setActiveOrder, bindTableSession,
-  loadRunningBill, setViewMode, setPosMeta, setManualDiscount, markKotSent, startNewOrder,
+  loadRunningBill, setViewMode, setPosMeta, setManualDiscount, markKotSent, resetKotSent, startNewOrder,
 } from '@/store/slices/posSlice'
 import { addOrder } from '@/store/slices/ordersSlice'
 import { formatCurrency } from '@/lib/utils'
@@ -474,7 +474,14 @@ export default function POSPage() {
               ? `KOT sent · ${order.orderNumber} · table booked — add more anytime`
               : `KOT sent · ${order.orderNumber}`,
       )
-      dispatch(startNewOrder())
+      // Offline: keep table + active order so follow-up KOTs append items instead of
+      // creating duplicate OFF- orders. Online: return to floor plan as before.
+      if (offline) {
+        dispatch(clearCart())
+        dispatch(resetKotSent())
+      } else {
+        dispatch(startNewOrder())
+      }
     } catch (error) {
       toast.error(formatApiError(error, 'Could not send KOT'))
     } finally {

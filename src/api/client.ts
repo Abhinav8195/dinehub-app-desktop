@@ -67,7 +67,9 @@ const electronAdapter: AxiosAdapter = async (config) => {
     body: rawData,
     ...(Object.keys(forwardedHeaders ?? {}).length ? { headers: forwardedHeaders } : {}),
     ...(responseType ? { responseType } : {}),
-    ...(config.timeout && config.timeout !== 30000 ? { timeout: config.timeout } : {})
+    // Always send a timeout — omitting the Axios default (30000) left Electron
+    // fetches hanging forever and every page stuck on "Loading…".
+    timeout: typeof config.timeout === 'number' && config.timeout > 0 ? config.timeout : 20_000,
   }) as BridgeResult
   if (!result.ok) {
     const error = new ApiError({
@@ -102,7 +104,7 @@ const electronAdapter: AxiosAdapter = async (config) => {
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000,
+  timeout: 20_000,
   headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
   adapter: electronAdapter
 })

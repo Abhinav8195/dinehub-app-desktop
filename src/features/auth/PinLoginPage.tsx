@@ -43,6 +43,8 @@ export default function PinLoginPage() {
         deviceType: 'pos',
         deviceId
       })
+      // Resolve features before flipping auth — avoids FeatureAccessBoundary white splash.
+      await useAuthStore.getState().loadFeatures(result.user)
       setUser(result.user)
       useAuthStore.setState({ isAuthenticated: true })
       toast.success(`Welcome, ${result.user.firstName}!`)

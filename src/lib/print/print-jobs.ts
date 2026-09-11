@@ -89,10 +89,18 @@ export async function printReceiptHtml(html: string): Promise<void> {
   openPrintPopup(html, 'DiningHub Print')
 }
 
-/** Kitchen running-order print — same HTML pipeline as invoice. */
+/** Kitchen running-order print — prefer kitchen printer IPC, then shared receipt pipeline. */
 export async function printKotReceiptHtml(html: string): Promise<void> {
   if (!html.includes('class="receipt"')) {
     throw new Error('Invalid kitchen print document')
+  }
+  try {
+    if (window.electronAPI?.print?.kitchen) {
+      await window.electronAPI.print.kitchen(html)
+      return
+    }
+  } catch (error) {
+    console.warn('[print] kitchen IPC failed, falling back to receipt print', error)
   }
   await printReceiptHtml(html)
 }

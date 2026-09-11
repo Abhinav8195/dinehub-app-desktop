@@ -210,15 +210,33 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       try {
-        const user = await authApi.me()
+        const user = await Promise.race([
+          authApi.me(),
+          new Promise<never>((_, reject) => {
+            window.setTimeout(
+              () => reject(Object.assign(new Error('Auth bootstrap timed out'), { statusCode: 0 })),
+              12_000,
+            )
+          }),
+        ])
         await get().loadFeatures(user)
         set({ user, isAuthenticated: true })
       } catch {
-        // Hard refresh / offline / expired access: keep the person signed in from
-        // the last known profile until they click Sign Out.
-        if (!(await restoreCached())) {
-          set({ user: null, isAuthenticated: false })
+        // Hard refresh / offline: restore last profile so AuthGuard does not bounce to login.
+        if (await restoreCached()) return
+
+        // Tokens exist but cache missing — one more me() attempt (refresh may have finished).
+        if (hasSession) {
+          try {
+            const user = await authApi.me()
+            await get().loadFeatures(user)
+            set({ user, isAuthenticated: true })
+            return
+          } catch {
+            /* fall through */
+          }
         }
+        set({ user: null, isAuthenticated: false })
       }
     } catch {
       set({ user: null, isAuthenticated: false })

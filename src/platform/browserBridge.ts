@@ -100,6 +100,7 @@ async function rawRequest(request: any, accessToken = authStorage.get(ACCESS)) {
     if (value !== undefined && value !== null) query.set(key, String(value))
   })
   const url = `${API_BASE}${request.path}${query.size ? `?${query}` : ''}`
+  const timeoutMs = typeof request.timeout === 'number' && request.timeout > 0 ? request.timeout : 20_000
   const response = await fetch(url, {
     method: request.method,
     headers: {
@@ -109,8 +110,26 @@ async function rawRequest(request: any, accessToken = authStorage.get(ACCESS)) {
       ...(request.headers || {}),
     },
     body: request.body === undefined ? undefined : JSON.stringify(request.body),
+    signal: AbortSignal.timeout(timeoutMs),
   })
   return { response, parsed: await parse(response, request.responseType) }
+}
+
+let refreshPromise: Promise<boolean> | null = null
+
+async function refreshWebSession(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise
+  refreshPromise = (async () => {
+    const refreshToken = authStorage.get(REFRESH)
+    if (!refreshToken) return false
+    const refresh = await rawRequest({ method: 'POST', path: '/auth/refresh', body: { refreshToken } }, null)
+    if (!refresh.response.ok) return false
+    tokensFrom(refresh.parsed.data)
+    return true
+  })().finally(() => {
+    refreshPromise = null
+  })
+  return refreshPromise
 }
 
 async function requestDineHub(request: any) {
@@ -122,15 +141,11 @@ async function requestDineHub(request: any) {
       && !String(request.path || '').startsWith('/auth/refresh')
       && !String(request.path || '').startsWith('/auth/register')
     ) {
-      const refreshToken = authStorage.get(REFRESH)
-      if (refreshToken) {
-        const refresh = await rawRequest({ method: 'POST', path: '/auth/refresh', body: { refreshToken } }, null)
-        if (refresh.response.ok) {
-          tokensFrom(refresh.parsed.data)
-          result = await rawRequest(request)
-        }
-        // Keep tokens on refresh failure — Sign Out only clears the session.
+      const refreshed = await refreshWebSession()
+      if (refreshed) {
+        result = await rawRequest(request)
       }
+      // Keep tokens on refresh failure — Sign Out only clears the session.
     }
     tokensFrom(result.parsed.data)
     cacheUserFromResponse(String(request.path || ''), result.parsed.data)

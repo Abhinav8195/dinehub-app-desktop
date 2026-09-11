@@ -24,9 +24,15 @@ const queryClient = new QueryClient({
       staleTime: 0,
       gcTime: 5 * 60 * 1000,
       retry: 1,
+      // Avoid endless pending UI when a request hangs before our transport timeout.
+      networkMode: 'always',
       refetchOnMount: 'always',
       refetchOnWindowFocus: true,
       refetchOnReconnect: true,
+    },
+    mutations: {
+      networkMode: 'always',
+      retry: 0,
     },
   },
 })

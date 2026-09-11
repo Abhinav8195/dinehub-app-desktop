@@ -9,6 +9,14 @@ import { NAVIGATION, type NavItem } from '@/constants/navigation'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { toggleSidebar, toggleFavorite, togglePinnedMenu } from '@/store/slices/appSlice'
 import { usePermissions } from '@/hooks/usePermissions'
 import { canAccessNav } from '@/lib/permissions'
@@ -84,6 +92,8 @@ export function Sidebar() {
     }
 
     const reports = navigationWithLiveBadges.find((item) => item.id === 'reports')
+    // Soft-unlock: show Reports whenever hasFeature('REPORTS') is true (includes
+    // restaurants that only have POS/Orders/etc. enabled).
     if (reports && canSee(reports) && hasFeature('REPORTS') && !visible.some((item) => item.id === 'reports')) {
       const insertAfter = visible.findIndex((item) => item.id === 'crm' || item.id === 'customers' || item.id === 'reservations')
       visible = [...visible]
@@ -141,7 +151,9 @@ export function Sidebar() {
         (item.href !== '/app' && item.href !== '/' && location.pathname.startsWith(item.href + '/'))
     const hasChildren = item.children && item.children.length > 0
     const isExpanded = expanded.includes(item.id)
-    const visibleChildren = item.children?.filter(canSee) ?? []
+    const visibleChildren = (item.children ?? []).filter((child) =>
+      canSee(child) && (!child.feature || hasFeature(child.feature))
+    )
 
     const linkEl = (
       <Link
@@ -211,7 +223,54 @@ export function Sidebar() {
       </div>
     )
 
+    // Collapsed sidebar: show a right-side flyout so Reports / Menu / etc. children stay reachable.
     if (sidebarCollapsed) {
+      if (visibleChildren.length > 0) {
+        const childActive = visibleChildren.some((child) => {
+          const [childPath, childQuery = ''] = child.href.split('?')
+          return childQuery
+            ? location.pathname === childPath && location.search === `?${childQuery}`
+            : location.pathname === child.href || location.pathname.startsWith(child.href + '/')
+        })
+        return (
+          <DropdownMenu key={item.id}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                title={item.title}
+                aria-label={item.title}
+                className={cn(
+                  'flex w-full items-center justify-center rounded-xl px-2 py-2.5 transition-all duration-200',
+                  isActive || childActive
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent',
+                )}
+              >
+                <item.icon className={cn('h-[18px] w-[18px] shrink-0', (isActive || childActive) ? 'text-primary-foreground' : 'text-muted-foreground')} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="right" align="start" sideOffset={10} className="min-w-[200px]">
+              <DropdownMenuLabel>{item.title}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link to={item.href} className="cursor-pointer">
+                  All {item.title}
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {visibleChildren.map((child) => (
+                <DropdownMenuItem key={child.id} asChild>
+                  <Link to={child.href} className="cursor-pointer gap-2">
+                    <child.icon className="h-4 w-4 text-muted-foreground" />
+                    {child.title}
+                  </Link>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )
+      }
+
       return (
         <Tooltip key={item.id}>
           <TooltipTrigger asChild>{row}</TooltipTrigger>

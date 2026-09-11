@@ -44,11 +44,34 @@ const debugApi = import.meta.env.DEV || process.env.DINEHUB_API_DEBUG === '1'
 
 interface RefreshState {
   promise: Promise<string> | null
-  resolve: ((value: string) => void) | null
-  reject: ((reason: unknown) => void) | null
 }
 
-const refreshState: RefreshState = { promise: null, resolve: null, reject: null }
+const refreshState: RefreshState = { promise: null }
+let tokenEpoch = 0
+
+export function bumpTokenEpoch(): number {
+  tokenEpoch += 1
+  return tokenEpoch
+}
+
+export function getTokenEpoch(): number {
+  return tokenEpoch
+}
+
+const REQUEST_TIMEOUT_MS = 20_000
+
+function requestTimeoutMs(request?: Pick<ApiRequest, 'timeout'>): number {
+  return typeof request?.timeout === 'number' && request.timeout > 0
+    ? request.timeout
+    : REQUEST_TIMEOUT_MS
+}
+
+function isTimeoutError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const name = (error as { name?: string }).name
+  const message = error instanceof Error ? error.message : String(error)
+  return name === 'TimeoutError' || name === 'AbortError' || /aborted|timeout/i.test(message)
+}
 
 function logRequest(method: string, url: string): void {
   if (debugApi) console.info(`[DiningHub API] -> ${method} ${url}`)
@@ -128,59 +151,66 @@ async function refreshAccessToken(): Promise<string> {
     return refreshState.promise
   }
 
-  return new Promise<string>((resolve, reject) => {
-    refreshState.resolve = resolve
-    refreshState.reject = reject
+  const refreshTokenAtStart = getRefreshToken()
+  const epochAtStart = tokenEpoch
 
-    const doRefresh = async () => {
-      const refreshTokenAtStart = getRefreshToken()
-      try {
-        if (!refreshTokenAtStart) {
-          throw { statusCode: 401, message: 'Your session has expired. Please sign in again.' } satisfies ApiFailure
-        }
-        const refreshUrl = buildUrl('/auth/refresh')
-        logRequest('POST', refreshUrl)
-        const response = await fetch(refreshUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ refreshToken: refreshTokenAtStart, refresh_token: refreshTokenAtStart })
-        })
-        logResponse('POST', refreshUrl, response.status)
-        const result = await parseResponse(response)
-        const payload = result.data as Record<string, unknown> | null
-        const data = (payload?.data && typeof payload.data === 'object' ? payload.data : payload) as Record<string, unknown> | null
-        const nested = data?.tokens && typeof data.tokens === 'object' ? data.tokens as Record<string, unknown> : null
-        const accessToken = [
-          nested?.accessToken,
-          nested?.access_token,
-          data?.accessToken,
-          data?.access_token,
-        ].find((value): value is string => typeof value === 'string' && value.length > 0)
-        const nextRefresh = [
-          nested?.refreshToken,
-          nested?.refresh_token,
-          data?.refreshToken,
-          data?.refresh_token,
-          refreshTokenAtStart,
-        ].find((value): value is string => typeof value === 'string' && value.length > 0)
-        if (!accessToken || !nextRefresh) {
-          throw { statusCode: 401, message: 'Invalid refresh response' } satisfies ApiFailure
-        }
-        setTokens({ accessToken, refreshToken: nextRefresh })
-        refreshState.resolve?.(accessToken)
-      } catch (error) {
-        // Keep credentials on refresh failure — hard refresh / brief API outages must
-        // not force logout. Only explicit Sign Out clears tokens.
-        refreshState.reject?.(error)
-      } finally {
-        refreshState.promise = null
-        refreshState.resolve = null
-        refreshState.reject = null
-      }
+  refreshState.promise = (async () => {
+    if (!refreshTokenAtStart) {
+      throw { statusCode: 401, message: 'Your session has expired. Please sign in again.' } satisfies ApiFailure
     }
-
-    refreshState.promise = doRefresh()
+    const refreshUrl = buildUrl('/auth/refresh')
+    logRequest('POST', refreshUrl)
+    let response: Response
+    try {
+      response = await fetch(refreshUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ refreshToken: refreshTokenAtStart, refresh_token: refreshTokenAtStart }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+    } catch (error) {
+      throw {
+        statusCode: 0,
+        message: isTimeoutError(error)
+          ? `DiningHub API timed out after ${Math.round(REQUEST_TIMEOUT_MS / 1000)}s. Check internet / VPN, then try again.`
+          : error instanceof Error ? error.message : 'Network request failed',
+        path: '/auth/refresh',
+      } satisfies ApiFailure
+    }
+    logResponse('POST', refreshUrl, response.status)
+    const result = await parseResponse(response)
+    const payload = result.data as Record<string, unknown> | null
+    const data = (payload?.data && typeof payload.data === 'object' ? payload.data : payload) as Record<string, unknown> | null
+    const nested = data?.tokens && typeof data.tokens === 'object' ? data.tokens as Record<string, unknown> : null
+    const accessToken = [
+      nested?.accessToken,
+      nested?.access_token,
+      data?.accessToken,
+      data?.access_token,
+    ].find((value): value is string => typeof value === 'string' && value.length > 0)
+    const nextRefresh = [
+      nested?.refreshToken,
+      nested?.refresh_token,
+      data?.refreshToken,
+      data?.refresh_token,
+      refreshTokenAtStart,
+    ].find((value): value is string => typeof value === 'string' && value.length > 0)
+    if (!accessToken || !nextRefresh) {
+      throw { statusCode: 401, message: 'Invalid refresh response' } satisfies ApiFailure
+    }
+    // A newer login/logout won the race — keep the newer session.
+    if (epochAtStart !== tokenEpoch || getRefreshToken() !== refreshTokenAtStart) {
+      const current = getAccessToken()
+      if (current) return current
+    }
+    setTokens({ accessToken, refreshToken: nextRefresh })
+    tokenEpoch += 1
+    return accessToken
+  })().finally(() => {
+    refreshState.promise = null
   })
+
+  return refreshState.promise
 }
 
 function requestHeaders(request: ApiRequest, accessToken: string | null): Record<string, string> {
@@ -207,6 +237,7 @@ function isAuthCredentialPath(path: string): boolean {
 async function send(request: ApiRequest, accessToken: string | null): Promise<DesktopApiResponse> {
   const headers = requestHeaders(request, accessToken)
   const url = buildUrl(request.path, request.query)
+  const timeoutMs = requestTimeoutMs(request)
   logRequest(request.method, url)
   let response: Response
   try {
@@ -214,20 +245,24 @@ async function send(request: ApiRequest, accessToken: string | null): Promise<De
       method: request.method,
       headers,
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
-      signal: request.timeout ? AbortSignal.timeout(request.timeout) : undefined
+      signal: AbortSignal.timeout(timeoutMs),
     })
     logResponse(request.method, url, response.status)
   } catch (error) {
     logFailure(request.method, url, error)
     const raw = error instanceof Error ? error.message : 'Network request failed'
+    const timedOut = isTimeoutError(error)
     const unreachable =
-      /failed to fetch|fetch failed|networkerror|econnrefused|enotfound|etimedout|certificate|ssl|unable to connect/i
+      timedOut
+      || /failed to fetch|fetch failed|networkerror|econnrefused|enotfound|etimedout|certificate|ssl|unable to connect/i
         .test(raw)
     throw {
       statusCode: 0,
-      message: unreachable
-        ? `Cannot reach DiningHub API (${baseUrl}). Check internet / VPN, then try again.`
-        : raw,
+      message: timedOut
+        ? `DiningHub API timed out after ${Math.round(timeoutMs / 1000)}s. Check internet / VPN, then try again.`
+        : unreachable
+          ? `Cannot reach DiningHub API (${baseUrl}). Check internet / VPN, then try again.`
+          : raw,
       path: request.path,
     } satisfies ApiFailure
   }
@@ -239,13 +274,26 @@ async function send(request: ApiRequest, accessToken: string | null): Promise<De
 }
 
 async function sendOnce(request: ApiRequest, accessToken: string): Promise<DesktopApiResponse> {
-  const response = await fetch(buildUrl(request.path, request.query), {
-    method: request.method,
-    headers: requestHeaders(request, accessToken),
-    body: request.body === undefined ? undefined : JSON.stringify(request.body),
-    signal: request.timeout ? AbortSignal.timeout(request.timeout) : undefined
-  })
-  return parseResponse(response, request.responseType)
+  const timeoutMs = requestTimeoutMs(request)
+  try {
+    const response = await fetch(buildUrl(request.path, request.query), {
+      method: request.method,
+      headers: requestHeaders(request, accessToken),
+      body: request.body === undefined ? undefined : JSON.stringify(request.body),
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    return parseResponse(response, request.responseType)
+  } catch (error) {
+    if ((error as Partial<ApiFailure> | null)?.statusCode != null) throw error
+    const timedOut = isTimeoutError(error)
+    throw {
+      statusCode: 0,
+      message: timedOut
+        ? `DiningHub API timed out after ${Math.round(timeoutMs / 1000)}s. Check internet / VPN, then try again.`
+        : error instanceof Error ? error.message : 'Network request failed',
+      path: request.path,
+    } satisfies ApiFailure
+  }
 }
 
 async function sendImageUpload(
@@ -330,6 +378,7 @@ export async function requestDineHubTransport(request: ApiRequest): Promise<Desk
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken || getRefreshToken() || tokens.accessToken,
     })
+    tokenEpoch += 1
   }
   cacheUserFromResponse(request.path, payload)
   return result

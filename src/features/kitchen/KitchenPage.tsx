@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ordersApi } from '@/api/orders.api'
+import { withOfflineCache } from '@/lib/offline'
 import type { PosOrder } from '@/api/types/pos.types'
 import { BRAND } from '@/constants/brand'
 import { BrandLogo } from '@/components/brand/BrandLogo'
@@ -54,7 +55,7 @@ export default function KitchenPage() {
 
   const { data: allOrders = [], isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['orders'],
-    queryFn: () => ordersApi.list().then((result) => result.orders),
+    queryFn: () => withOfflineCache('orders:list', () => ordersApi.list().then((result) => result.orders)),
     refetchInterval: 15_000,
   })
 

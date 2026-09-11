@@ -15,6 +15,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initialize()
   }, [initialize])
 
+  // Safety net: if auth flipped on without features (e.g. older PIN path), load them once.
+  useEffect(() => {
+    if (!isAuthenticated || !user) return
+    const status = useAuthStore.getState().featuresStatus
+    if (status === 'idle') void loadFeatures(user)
+  }, [isAuthenticated, user, loadFeatures])
 
   useEffect(() => {
     if (isAuthenticated && user?.tenantId) {

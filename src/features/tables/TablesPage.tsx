@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 import { tablesApi } from '@/api/tables.api'
 import { formatApiError } from '@/api/management-utils'
+import { withOfflineCache } from '@/lib/offline'
 import type { CreateTableRequest, TableDto } from '@/api/types/pos.types'
 import { BRAND } from '@/constants/brand'
 import { cn, formatCurrency, formatRelativeTime } from '@/lib/utils'
@@ -58,9 +59,9 @@ export default function TablesPage() {
   const [transferSourceId, setTransferSourceId] = useState('')
   const [transferTargetId, setTransferTargetId] = useState('')
 
-  const { data: tables = [], isLoading, isError, refetch, isFetching } = useQuery({
+  const { data: tables = [], isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['tables'],
-    queryFn: () => tablesApi.list(),
+    queryFn: () => withOfflineCache('tables', () => tablesApi.list()),
     refetchInterval: 10_000,
   })
 
@@ -239,7 +240,7 @@ export default function TablesPage() {
           </div>
         ) : isError ? (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
-            <p>Could not load tables. Check your connection and try again.</p>
+            <p className="text-danger text-sm">{formatApiError(error, 'Could not load tables. Check your connection and try again.')}</p>
             <Button variant="outline" onClick={() => refetch()}>Retry</Button>
           </div>
         ) : (
