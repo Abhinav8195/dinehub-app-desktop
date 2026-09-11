@@ -1,5 +1,5 @@
 import {
-  getAccessToken, getRefreshToken, setTokens, clearTokens, setCachedUser
+  getAccessToken, getRefreshToken, getTenantSlug, setTokens, clearTokens, setCachedUser
 } from '../store/secureStore'
 
 export type ApiMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -220,6 +220,11 @@ function requestHeaders(request: ApiRequest, accessToken: string | null): Record
   }
   if (!headers['Content-Type']) headers['Content-Type'] = 'application/json'
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+  // Tenant-scoped resources (menu, orders, dashboard, tables) require the slug.
+  const tenantSlug = getTenantSlug()
+  if (tenantSlug && !headers['X-Tenant-Slug'] && !isAuthCredentialPath(request.path)) {
+    headers['X-Tenant-Slug'] = tenantSlug
+  }
   return headers
 }
 
@@ -304,6 +309,8 @@ async function sendImageUpload(
 ): Promise<unknown> {
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+  const tenantSlug = getTenantSlug()
+  if (tenantSlug) headers['X-Tenant-Slug'] = tenantSlug
   const bytes = Buffer.from(file.base64, 'base64')
   const form = new FormData()
   form.append('file', new Blob([bytes], { type: file.mimeType }), file.name)
@@ -327,12 +334,15 @@ async function sendImageUploadOnce(
 ): Promise<unknown> {
   const form = new FormData()
   form.append('file', new Blob([Buffer.from(file.base64, 'base64')], { type: file.mimeType }), file.name)
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    Authorization: `Bearer ${accessToken}`,
+  }
+  const tenantSlug = getTenantSlug()
+  if (tenantSlug) headers['X-Tenant-Slug'] = tenantSlug
   const response = await fetch(buildUrl(path), {
     method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
+    headers,
     body: form
   })
   const payload = (await parseResponse(response)).data

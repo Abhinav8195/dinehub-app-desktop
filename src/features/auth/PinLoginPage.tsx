@@ -44,6 +44,9 @@ export default function PinLoginPage() {
         deviceId
       })
       // Resolve features before flipping auth — avoids FeatureAccessBoundary white splash.
+      if (result.user.tenant?.slug) {
+        await tokenBridge.setTenantSlug(result.user.tenant.slug).catch(() => {})
+      }
       await useAuthStore.getState().loadFeatures(result.user)
       setUser(result.user)
       useAuthStore.setState({ isAuthenticated: true })

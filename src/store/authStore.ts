@@ -185,6 +185,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   fetchMe: async () => {
     const user = await authApi.me()
+    if (user.tenant?.slug) {
+      await tokenBridge.setTenantSlug(user.tenant.slug).catch(() => {})
+    }
     await get().loadFeatures(user)
     set({ user, isAuthenticated: true })
     return user
@@ -204,6 +207,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const restoreCached = async () => {
         if (!cachedRaw) return false
         const user = mapUser(cachedRaw as never)
+        if (user.tenant?.slug) {
+          await tokenBridge.setTenantSlug(user.tenant.slug).catch(() => {})
+        }
         await get().loadFeatures(user)
         set({ user, isAuthenticated: true })
         return true
@@ -219,6 +225,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             )
           }),
         ])
+        if (user.tenant?.slug) {
+          await tokenBridge.setTenantSlug(user.tenant.slug).catch(() => {})
+        }
         await get().loadFeatures(user)
         set({ user, isAuthenticated: true })
       } catch {
@@ -229,6 +238,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         if (hasSession) {
           try {
             const user = await authApi.me()
+            if (user.tenant?.slug) {
+              await tokenBridge.setTenantSlug(user.tenant.slug).catch(() => {})
+            }
             await get().loadFeatures(user)
             set({ user, isAuthenticated: true })
             return

@@ -271,7 +271,8 @@ export async function withOfflineCache<T>(key: string, fetcher: () => Promise<T>
     return data
   } catch (error) {
     const cached = await cacheGet<T>(key).catch(() => null)
-    if (cached != null) return cached
+    // Empty arrays are usually a prior unscoped/failed response — don't treat them as offline truth.
+    if (cached != null && !(Array.isArray(cached) && cached.length === 0)) return cached
     throw error
   }
 }

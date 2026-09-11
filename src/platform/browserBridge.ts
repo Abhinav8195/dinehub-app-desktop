@@ -101,12 +101,21 @@ async function rawRequest(request: any, accessToken = authStorage.get(ACCESS)) {
   })
   const url = `${API_BASE}${request.path}${query.size ? `?${query}` : ''}`
   const timeoutMs = typeof request.timeout === 'number' && request.timeout > 0 ? request.timeout : 20_000
+  const path = String(request.path || '')
+  const isAuthCredential =
+    path.startsWith('/auth/login')
+    || path.startsWith('/auth/refresh')
+    || path.startsWith('/auth/register')
+    || path.startsWith('/auth/forgot-password')
+    || path.startsWith('/auth/reset-password')
+  const tenantSlug = authStorage.get(TENANT)
   const response = await fetch(url, {
     method: request.method,
     headers: {
       Accept: request.responseType ? '*/*' : 'application/json',
       ...(request.body === undefined ? {} : { 'Content-Type': 'application/json' }),
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...(tenantSlug && !isAuthCredential ? { 'X-Tenant-Slug': tenantSlug } : {}),
       ...(request.headers || {}),
     },
     body: request.body === undefined ? undefined : JSON.stringify(request.body),
@@ -279,11 +288,13 @@ async function uploadMenuImageWeb(
   form.append('file', new Blob([bytes], { type: file.mimeType }), file.name)
   onProgress(20)
   const accessToken = authStorage.get(ACCESS)
+  const tenantSlug = authStorage.get(TENANT)
   const response = await fetch(`${API_BASE}${MENU_UPLOAD[kind]}`, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...(tenantSlug ? { 'X-Tenant-Slug': tenantSlug } : {}),
     },
     body: form,
   })

@@ -35,8 +35,8 @@ export default function DashboardPage() {
   const { user } = useAuth()
   const selectedRestaurantId = useSelector((state: RootState) => state.app.selectedRestaurantId)
   const tenantId = user?.isSuperAdmin || user?.userType === 'SUPER_ADMIN'
-    ? selectedRestaurantId
-    : user?.tenantId
+    ? (selectedRestaurantId || user?.tenantId || user?.tenant?.id || '')
+    : (user?.tenantId || user?.tenant?.id)
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['dashboard', 'stats', tenantId],
     queryFn: () => dashboardApi.getStats(tenantId),

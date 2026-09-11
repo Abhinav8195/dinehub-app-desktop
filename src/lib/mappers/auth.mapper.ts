@@ -64,7 +64,7 @@ export function mapUser(raw: BackendUser): AuthUser {
     userType,
     roles: raw.roles ?? [],
     permissions: raw.permissions ?? [],
-    tenantId: raw.tenantId ?? undefined,
+    tenantId: raw.tenantId ?? raw.tenant?.id ?? undefined,
     tenant: raw.tenant ?? null,
     hasPin: Boolean(raw.hasPin),
     employeeCode: raw.employeeCode ?? undefined,

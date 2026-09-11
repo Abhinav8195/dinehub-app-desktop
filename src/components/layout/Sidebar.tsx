@@ -46,8 +46,8 @@ export function Sidebar() {
   const kotSettingOn = restaurant?.kotEnabled !== false
   const showKitchenNav = kitchenFeatureOn || kotSettingOn
   const tenantId = user?.isSuperAdmin || user?.userType === 'SUPER_ADMIN'
-    ? selectedRestaurantId
-    : user?.tenantId
+    ? (selectedRestaurantId || user?.tenantId || user?.tenant?.id || '')
+    : (user?.tenantId || user?.tenant?.id)
   const { data: dashboard } = useQuery({
     queryKey: ['dashboard', 'stats', tenantId],
     queryFn: () => dashboardApi.getStats(tenantId),

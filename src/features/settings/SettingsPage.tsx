@@ -30,8 +30,8 @@ export default function SettingsPage() {
   const { user } = useAuth()
   const selectedRestaurantId = useSelector((state: RootState) => state.app.selectedRestaurantId)
   const tenantId = user?.isSuperAdmin || user?.userType === 'SUPER_ADMIN'
-    ? selectedRestaurantId
-    : user?.tenantId
+    ? (selectedRestaurantId || user?.tenantId || user?.tenant?.id || '')
+    : (user?.tenantId || user?.tenant?.id)
   const { data: restaurant } = useQuery({ queryKey: ['settings', 'restaurant'], queryFn: settingsApi.getRestaurant })
   const { data: printers = [] } = useQuery({ queryKey: ['printers'], queryFn: printersApi.list })
   const { data: dashboard } = useQuery({

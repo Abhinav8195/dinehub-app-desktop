@@ -43,13 +43,27 @@ describe('main-process DiningHub client', () => {
     vi.stubGlobal('fetch', vi.fn())
   })
 
-  it('attaches JSON and bearer headers without legacy tenant identity', async () => {
+  it('attaches bearer and X-Tenant-Slug on tenant-scoped requests', async () => {
     vi.mocked(fetch).mockResolvedValue(json({ success: true, data: [] }))
     await requestDineHub({ method: 'GET', path: '/menu/categories' })
     const init = vi.mocked(fetch).mock.calls[0][1]
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer access-old')
-    expect(new Headers(init?.headers).get('X-Tenant-Slug')).toBeNull()
+    expect(new Headers(init?.headers).get('X-Tenant-Slug')).toBe('pizza-place')
     expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json')
+  })
+
+  it('does not send X-Tenant-Slug on credential auth paths', async () => {
+    vi.mocked(fetch).mockResolvedValue(json({
+      success: true,
+      data: { user: { id: 'u1' }, tokens: { accessToken: 'a1', refreshToken: 'r1', expiresIn: 3600, tokenType: 'Bearer' } }
+    }))
+    await requestDineHub({
+      method: 'POST',
+      path: '/auth/login',
+      body: { email: 'a@b.com', password: 'x', deviceName: 't', deviceType: 'electron-desktop', deviceId: 'd1' }
+    })
+    const init = vi.mocked(fetch).mock.calls[0][1]
+    expect(new Headers(init?.headers).get('X-Tenant-Slug')).toBeNull()
   })
 
   it('stores login tokens and sends the required device payload', async () => {
