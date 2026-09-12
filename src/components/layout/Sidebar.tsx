@@ -54,7 +54,7 @@ export function Sidebar() {
     queryFn: () => dashboardApi.getStats(tenantId),
     enabled: Boolean(tenantId) && !isPosRoute,
     staleTime: 60_000,
-    refetchInterval: isPosRoute ? false : 60_000,
+    refetchInterval: isPosRoute ? false : 120_000,
   })
 
   const navigationWithLiveBadges = useMemo(() => NAVIGATION.map((item) => {
