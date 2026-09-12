@@ -69,21 +69,22 @@ async function printWithElectronIpc(html: string): Promise<boolean> {
   return false
 }
 
-/** Print any receipt/KOT HTML — iframe first (most reliable), then Electron IPC, then popup. */
+/** Print any receipt/KOT HTML — Electron IPC first (native background print), then iframe, then popup. */
 export async function printReceiptHtml(html: string): Promise<void> {
   if (!html.trim()) throw new Error('Nothing to print')
+
+  // In Electron desktop app, ALWAYS prefer native IPC printing (hidden window, direct printer / native dialog).
+  try {
+    if (await printWithElectronIpc(html)) return
+  } catch (ipcError) {
+    console.warn('[print] Electron IPC failed, trying iframe fallback', ipcError)
+  }
 
   try {
     await printViaFrame(html, 'DiningHub Print')
     return
   } catch (frameError) {
-    console.warn('[print] frame print failed, trying Electron IPC', frameError)
-  }
-
-  try {
-    if (await printWithElectronIpc(html)) return
-  } catch (ipcError) {
-    console.warn('[print] Electron IPC failed, trying popup', ipcError)
+    console.warn('[print] frame print failed, trying popup', frameError)
   }
 
   openPrintPopup(html, 'DiningHub Print')

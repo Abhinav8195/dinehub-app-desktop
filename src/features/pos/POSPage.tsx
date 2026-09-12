@@ -461,10 +461,38 @@ export default function POSPage() {
         }
       }
 
+      const kotTableId = selectedTableId || order.tableId || order.table?.id || null
+      const offline = order.orderNumber.startsWith('OFF-')
+
+      // Optimistically mark table as OCCUPIED in React Query cache so floor plan shows it immediately in red
+      if (kotTableId) {
+        queryClient.setQueryData<TableDto[]>(['tables'], (prev = []) =>
+          prev.map((t) =>
+            t.id === kotTableId
+              ? {
+                  ...t,
+                  status: 'occupied',
+                  currentOrder: {
+                    id: order.id,
+                    orderNumber: order.orderNumber,
+                    status: order.status || 'confirmed',
+                    customerName: meta.customerName || order.customer?.name || 'Walk-in',
+                    total: order.total,
+                    createdAt: order.createdAt || new Date().toISOString(),
+                  },
+                }
+              : t,
+          ),
+        )
+        if (!offline) {
+          tablesApi.updateStatus(kotTableId, 'OCCUPIED').catch(() => {})
+        }
+      }
+
       dispatch(markKotSent(pending.map((line) => line.lineKey)))
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       queryClient.invalidateQueries({ queryKey: ['tables'] })
-      const offline = order.orderNumber.startsWith('OFF-')
+      void queryClient.refetchQueries({ queryKey: ['tables'] })
       toast.success(
         alsoPrint
           ? offline
@@ -604,7 +632,29 @@ export default function POSPage() {
   }
 
   const openRunningTable = async (table: TableDto) => {
-    if (!table.currentOrder) {
+    let orderId = table.currentOrder?.id
+    let orderNumber = table.currentOrder?.orderNumber
+
+    // If table is occupied but currentOrder was not attached directly, query active orders for this table
+    if (!orderId && (table.status === 'occupied' || normalizeTableStatus(table.status) === 'occupied')) {
+      try {
+        const listResult = await ordersApi.list({ limit: 50 })
+        const running = (listResult.orders || []).find(
+          (o) => (o.tableId === table.id || o.table?.id === table.id)
+            && String(o.paymentStatus || '').toLowerCase() !== 'paid'
+            && o.status !== 'cancelled'
+            && o.status !== 'refunded',
+        )
+        if (running) {
+          orderId = running.id
+          orderNumber = running.orderNumber
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    if (!orderId) {
       dispatch(bindTableSession({
         tableId: table.id,
         floor: table.floor,
@@ -613,8 +663,6 @@ export default function POSPage() {
       return
     }
 
-    const orderId = table.currentOrder.id
-    const orderNumber = table.currentOrder.orderNumber
     try {
       const order = await ordersApi.get(orderId)
       const cartLines = mapPosOrderItemsToCart(order)
@@ -626,7 +674,7 @@ export default function POSPage() {
         floor: table.floor,
         cart: cartLines,
         guestCount: guestMatch ? Number(guestMatch[1]) || 2 : 2,
-        customerName: order.customer?.name || table.currentOrder.customerName || '',
+        customerName: order.customer?.name || table.currentOrder?.customerName || '',
         customerPhone: order.customer?.phone || '',
       }))
       toast.success(

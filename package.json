@@ -1,6 +1,6 @@
 {
   "name": "dine-hub-desktop",
-  "version": "1.0.26",
+  "version": "1.0.27",
   "description": "Enterprise Restaurant & Cafe Management Desktop Application",
   "main": "out/main/index.js",
   "author": "DiningHub",

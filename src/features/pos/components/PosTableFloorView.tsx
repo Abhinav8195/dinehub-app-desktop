@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowRightLeft, Merge, Plus, RefreshCw } from 'lucide-react'
+import { ArrowRightLeft, Merge, MoreVertical, Plus, RefreshCw, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -138,43 +138,48 @@ export function PosTableFloorView({
             <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-primary">{section.name}</h3>
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10">
               {section.tables.map((table) => {
-                const status = normalizeTableStatus(table.status)
+                const isOccupied = Boolean(table.currentOrder) || normalizeTableStatus(table.status) === 'occupied'
+                const status = isOccupied ? 'occupied' : normalizeTableStatus(table.status)
                 const selected = table.id === selectedTableId
                 return (
-                  <button
-                    key={table.id}
-                    type="button"
-                    onClick={() => {
-                      setActiveTable(table)
-                      onSelectTable(table)
-                      onFloorChange(section.name)
-                    }}
-                    onDoubleClick={() => {
-                      if (
-                        status === 'available'
-                        || status === 'occupied'
-                        || status === 'reserved'
-                        || table.currentOrder
-                      ) {
+                  <div key={table.id} className="group relative aspect-square">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSelectTable(table)
+                        onFloorChange(section.name)
                         onStartOrder(table)
-                      } else {
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
                         setActiveTable(table)
-                      }
-                    }}
-                    className={cn(
-                      'flex aspect-square flex-col items-center justify-center rounded-xl border-2 border-dashed p-1 transition-all',
-                      TABLE_STATUS_STYLES[status] || TABLE_STATUS_STYLES.available,
-                      selected && 'ring-2 ring-primary ring-offset-1',
-                    )}
-                  >
-                    <span className="text-base font-bold leading-none">{table.number}</span>
-                    <span className="mt-1 text-[9px] uppercase opacity-80">{status.slice(0, 4)}</span>
-                    {table.currentOrder && (
-                      <span className="mt-0.5 max-w-full truncate text-[9px] font-medium">
-                        {formatCurrency(table.currentOrder.total)}
-                      </span>
-                    )}
-                  </button>
+                      }}
+                      className={cn(
+                        'flex h-full w-full flex-col items-center justify-center rounded-xl border-2 border-dashed p-1 transition-all',
+                        TABLE_STATUS_STYLES[status] || TABLE_STATUS_STYLES.available,
+                        selected && 'ring-2 ring-primary ring-offset-1',
+                      )}
+                    >
+                      <span className="text-base font-bold leading-none">{table.number}</span>
+                      <span className="mt-1 text-[9px] uppercase opacity-80">{status.slice(0, 4)}</span>
+                      {table.currentOrder && (
+                        <span className="mt-0.5 max-w-full truncate text-[9px] font-medium">
+                          {formatCurrency(table.currentOrder.total)}
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      title="Table options / actions"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setActiveTable(table)
+                      }}
+                      className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-md bg-background/80 text-muted-foreground opacity-60 shadow-xs transition-opacity hover:bg-background hover:text-foreground hover:opacity-100 group-hover:opacity-100"
+                    >
+                      <Settings2 className="h-3 w-3" />
+                    </button>
+                  </div>
                 )
               })}
             </div>
