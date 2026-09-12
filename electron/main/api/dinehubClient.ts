@@ -165,7 +165,7 @@ async function refreshAccessToken(): Promise<string> {
       response = await fetch(refreshUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ refreshToken: refreshTokenAtStart, refresh_token: refreshTokenAtStart }),
+        body: JSON.stringify({ refreshToken: refreshTokenAtStart }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       })
     } catch (error) {

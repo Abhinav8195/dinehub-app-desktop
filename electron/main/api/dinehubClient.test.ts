@@ -94,6 +94,11 @@ describe('main-process DiningHub client', () => {
       requestDineHub({ method: 'GET', path: '/menu/items' })
     ])
     expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/auth/refresh'))).toHaveLength(1)
+    const refreshCall = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/auth/refresh'))
+    expect(refreshCall).toBeDefined()
+    const refreshBody = JSON.parse(String(refreshCall?.[1]?.body))
+    expect(refreshBody).toEqual({ refreshToken: 'refresh-old' })
+    expect(refreshBody).not.toHaveProperty('refresh_token')
     expect(setTokens).toHaveBeenCalledWith({ accessToken: 'fresh', refreshToken: 'fresh-r' })
     const authorizedRetries = vi.mocked(fetch).mock.calls.filter(([, init]) =>
       new Headers(init?.headers).get('Authorization') === 'Bearer fresh'
