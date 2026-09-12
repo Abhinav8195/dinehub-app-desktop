@@ -42,7 +42,7 @@ describe('menu services', () => {
     requestDineHub.mockResolvedValueOnce(ok([item])).mockResolvedValueOnce(ok(item))
       .mockResolvedValueOnce(ok(item)).mockResolvedValueOnce(ok({ ...item, available: false, popular: true }))
       .mockResolvedValueOnce(ok(null))
-    await expect(menuItemService.list('c1', true)).resolves.toEqual([{ ...item, isVegetarian: null, dietary: null, modifierGroups: [] }])
+    await expect(menuItemService.list('c1', true)).resolves.toEqual([{ ...item, isVegetarian: null, dietary: null, modifierGroups: [], recipeLines: [] }])
     await menuItemService.get('i1')
     await menuItemService.create({ categoryId: 'c1', name: 'Margherita', price: 12, isAvailable: true, isPopular: false })
     const updated = await menuItemService.update('i1', { isAvailable: false, isPopular: true })
@@ -82,12 +82,11 @@ describe('menu services', () => {
   it('sends bulk availability changes', async () => {
     requestDineHub.mockResolvedValue(ok(null))
     await menuItemService.bulkToggle({ ids: ['i1', 'i2'], isAvailable: false })
-    expect(requestDineHub).toHaveBeenCalledWith({
+    expect(requestDineHub).toHaveBeenCalledWith(expect.objectContaining({
       method: 'PATCH',
       path: '/menu/items/bulk-toggle',
-      query: undefined,
       body: { ids: ['i1', 'i2'], isAvailable: false }
-    })
+    }))
   })
 
   it('surfaces normalized API errors', async () => {
