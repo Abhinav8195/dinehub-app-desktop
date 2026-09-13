@@ -42,7 +42,7 @@ import { store } from '@/store'
 import type { MenuItemDto, PosOrder, TableDto } from '@/api/types/pos.types'
 import type { OrderItem } from '@/types'
 import { findByShortCode, matchesMenuSearch } from './lib/menuSearch'
-import { floorsFromTables, tableDisplayLabel } from './lib/tableStatus'
+import { floorsFromTables, normalizeTableStatus, tableDisplayLabel } from './lib/tableStatus'
 import { mapPosOrderItemsToCart } from './lib/mapOrderToCart'
 import { usePosShortcuts } from './hooks/usePosShortcuts'
 
@@ -624,10 +624,11 @@ export default function POSPage() {
 
   const openRunningTable = async (table: TableDto) => {
     let orderId = table.currentOrder?.id
-    let orderNumber = table.currentOrder?.orderNumber
+    const isOccupied = Boolean(table.currentOrder)
+      || normalizeTableStatus(table.status) === 'occupied'
 
     // If table is occupied but currentOrder was not attached directly, query active orders for this table
-    if (!orderId && (table.status === 'occupied' || normalizeTableStatus(table.status) === 'occupied')) {
+    if (!orderId && isOccupied) {
       try {
         const listResult = await ordersApi.list({ limit: 50 })
         const running = (listResult.orders || []).find(
@@ -638,10 +639,9 @@ export default function POSPage() {
         )
         if (running) {
           orderId = running.id
-          orderNumber = running.orderNumber
         }
       } catch {
-        // continue
+        // continue with empty session
       }
     }
 
@@ -674,10 +674,9 @@ export default function POSPage() {
           : `${tableDisplayLabel(table)} · ${order.orderNumber} — running bill open`,
       )
     } catch (error) {
+      // Keep table selected but never keep the previous table's cart.
       dispatch(bindTableSession({
         tableId: table.id,
-        orderId,
-        orderNumber,
         floor: table.floor,
       }))
       toast.error(formatApiError(error, 'Could not load running bill — add items or try again'))
@@ -688,9 +687,10 @@ export default function POSPage() {
     void openRunningTable(table)
   }
 
-  /** Fast POS table dropdown — switch table + load running bill when occupied. */
+  /** Fast POS table dropdown — always reset cart, then load new table session / running bill. */
   const handleTableDropdownChange = (id: string | null) => {
     if (!id) {
+      dispatch(clearCart())
       dispatch(setSelectedTable(null))
       dispatch(setActiveOrder({ id: null, orderNumber: null }))
       return
@@ -699,24 +699,29 @@ export default function POSPage() {
 
     const table = tables.find((row) => row.id === id)
     if (!table) {
+      dispatch(clearCart())
       dispatch(setSelectedTable(id))
       dispatch(setActiveOrder({ id: null, orderNumber: null }))
       return
     }
 
-    // Sync floor so dropdown options stay consistent with the selected table.
-    if (table.floor && table.floor !== meta.selectedFloor) {
-      dispatch(setPosMeta({ selectedFloor: table.floor }))
-    }
-
     const pendingUnsent = cart.some((line) => !kotSentKeys.includes(line.lineKey))
     if (pendingUnsent && selectedTableId) {
-      toast.message('Switching table — unsent cart items will be replaced')
+      toast.message('Switching table — previous cart cleared')
     }
 
-    // Immediate selection so UI updates even while running bill loads.
-    dispatch(setSelectedTable(table.id))
-    void openRunningTable(table)
+    // Sync clear first so old KOT items never linger on the new table.
+    dispatch(bindTableSession({
+      tableId: table.id,
+      floor: table.floor || meta.selectedFloor,
+    }))
+
+    // Occupied / running table → load that bill into cart; available stays empty.
+    if (table.currentOrder || normalizeTableStatus(table.status) === 'occupied') {
+      void openRunningTable(table)
+    } else {
+      toast.success(`Table ${table.number} selected — cart cleared`)
+    }
   }
 
   const filteredHeld = heldOrders.filter((held) => {
