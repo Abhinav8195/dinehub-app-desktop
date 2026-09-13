@@ -77,7 +77,7 @@ const initialState: POSState = {
   tip: 0,
   notes: '',
   heldOrders: [],
-  viewMode: 'order',
+  viewMode: 'tables',
   meta: emptyMeta(),
   kotSentKeys: [],
 }
@@ -268,6 +268,7 @@ const posSlice = createSlice({
       state.discountValue = 0
       state.meta = emptyMeta()
       state.selectedTableId = null
+      state.viewMode = 'tables'
     },
     resumeOrder: (state, action: PayloadAction<string>) => {
       const held = state.heldOrders.find((h) => h.id === action.payload)

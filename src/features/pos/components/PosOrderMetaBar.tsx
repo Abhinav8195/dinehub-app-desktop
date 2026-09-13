@@ -1,10 +1,11 @@
+import { useMemo } from 'react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import type { PosOrderMeta } from '@/store/slices/posSlice'
 import type { TableDto } from '@/api/types/pos.types'
-import { isTableSelectableForNewOrder } from '../lib/tableStatus'
+import { isTableSelectableForNewOrder, normalizeTableStatus } from '../lib/tableStatus'
 
 type OrderType = 'dine-in' | 'takeaway' | 'delivery'
 
@@ -37,9 +38,33 @@ export function PosOrderMetaBar({
   floors,
   activeOrderNumber,
 }: PosOrderMetaBarProps) {
-  const floorTables = tables.filter((table) =>
-    !meta.selectedFloor || table.floor === meta.selectedFloor,
-  )
+  // Always keep the currently selected table in the list so Radix Select can change value.
+  // Floor filter is soft — if it would hide every row, fall back to all tables.
+  const tableOptions = useMemo(() => {
+    const forFloor = meta.selectedFloor
+      ? tables.filter((table) => table.floor === meta.selectedFloor || table.id === selectedTableId)
+      : tables
+    const list = (forFloor.length ? forFloor : tables)
+      .filter((table) => isTableSelectableForNewOrder(table, selectedTableId))
+    // Ensure selected id is present even if status is cleaning/stale
+    if (selectedTableId && !list.some((t) => t.id === selectedTableId)) {
+      const selected = tables.find((t) => t.id === selectedTableId)
+      if (selected) list.unshift(selected)
+    }
+    return list
+  }, [tables, meta.selectedFloor, selectedTableId])
+
+  const tableLabel = (table: TableDto) => {
+    const status = normalizeTableStatus(table.status)
+    const occ = table.currentOrder || status === 'occupied'
+    const parts = [
+      `T-${table.number}`,
+      table.floor,
+      `${table.capacity}p`,
+      occ ? (table.currentOrder?.orderNumber || 'OCC') : 'AVAI',
+    ]
+    return parts.filter(Boolean).join(' · ')
+  }
 
   return (
     <div className="shrink-0 space-y-1.5 border-b bg-white px-2 py-1.5">
@@ -76,19 +101,25 @@ export function PosOrderMetaBar({
             </Select>
           </Field>
           <Field label="Table">
-            <Select value={selectedTableId || undefined} onValueChange={(value) => onTableChange(value || null)}>
+            <Select
+              value={selectedTableId || undefined}
+              onValueChange={(value) => {
+                if (!value || value === selectedTableId) return
+                onTableChange(value)
+              }}
+            >
               <SelectTrigger className={cn('h-7 text-[11px]', !selectedTableId && 'border-primary')}>
                 <SelectValue placeholder="Select table" />
               </SelectTrigger>
               <SelectContent>
-                {floorTables
-                  .filter((table) => isTableSelectableForNewOrder(table, selectedTableId))
-                  .map((table) => (
-                    <SelectItem key={table.id} value={table.id}>
-                      T-{table.number} · {table.floor} · {table.capacity}p
-                      {table.currentOrder ? ` · ${table.currentOrder.orderNumber}` : ''}
-                    </SelectItem>
-                  ))}
+                {tableOptions.map((table) => (
+                  <SelectItem key={table.id} value={table.id}>
+                    {tableLabel(table)}
+                  </SelectItem>
+                ))}
+                {!tableOptions.length && (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">No tables on this floor</div>
+                )}
               </SelectContent>
             </Select>
           </Field>

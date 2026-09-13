@@ -504,14 +504,8 @@ export default function POSPage() {
               ? `KOT sent · ${order.orderNumber} · table booked — add more anytime`
               : `KOT sent · ${order.orderNumber}`,
       )
-      // Offline: keep table + active order so follow-up KOTs append items instead of
-      // creating duplicate OFF- orders. Online: return to floor plan as before.
-      if (offline) {
-        dispatch(clearCart())
-        dispatch(resetKotSent())
-      } else {
-        dispatch(startNewOrder())
-      }
+      // Always return to table selector after KOT / KOT & Print (online or offline).
+      dispatch(startNewOrder())
     } catch (error) {
       toast.error(formatApiError(error, 'Could not send KOT'))
     } finally {
@@ -590,10 +584,7 @@ export default function POSPage() {
       printReceiptHtml(html).catch(() => {})
     }
 
-    dispatch(clearCart())
-    dispatch(setSelectedTable(null))
-    dispatch(setActiveOrder({ id: null, orderNumber: null }))
-    dispatch(setViewMode('tables'))
+    dispatch(startNewOrder())
     setLoyalty(false)
     setFeedbackSms(false)
     setMarkedPaid(true)
@@ -697,6 +688,37 @@ export default function POSPage() {
     void openRunningTable(table)
   }
 
+  /** Fast POS table dropdown — switch table + load running bill when occupied. */
+  const handleTableDropdownChange = (id: string | null) => {
+    if (!id) {
+      dispatch(setSelectedTable(null))
+      dispatch(setActiveOrder({ id: null, orderNumber: null }))
+      return
+    }
+    if (id === selectedTableId) return
+
+    const table = tables.find((row) => row.id === id)
+    if (!table) {
+      dispatch(setSelectedTable(id))
+      dispatch(setActiveOrder({ id: null, orderNumber: null }))
+      return
+    }
+
+    // Sync floor so dropdown options stay consistent with the selected table.
+    if (table.floor && table.floor !== meta.selectedFloor) {
+      dispatch(setPosMeta({ selectedFloor: table.floor }))
+    }
+
+    const pendingUnsent = cart.some((line) => !kotSentKeys.includes(line.lineKey))
+    if (pendingUnsent && selectedTableId) {
+      toast.message('Switching table — unsent cart items will be replaced')
+    }
+
+    // Immediate selection so UI updates even while running bill loads.
+    dispatch(setSelectedTable(table.id))
+    void openRunningTable(table)
+  }
+
   const filteredHeld = heldOrders.filter((held) => {
     if (!holdFilter.trim()) return true
     const q = holdFilter.toLowerCase()
@@ -752,16 +774,7 @@ export default function POSPage() {
           }}
           tables={tables}
           selectedTableId={selectedTableId}
-          onTableChange={(id) => {
-            if (!id) {
-              dispatch(setSelectedTable(null))
-              dispatch(setActiveOrder({ id: null }))
-              return
-            }
-            const table = tables.find((row) => row.id === id)
-            if (table) void openRunningTable(table)
-            else dispatch(setSelectedTable(id))
-          }}
+          onTableChange={handleTableDropdownChange}
           search={search}
           onSearchChange={setSearch}
           items={filteredItems}
@@ -797,7 +810,8 @@ export default function POSPage() {
           selectedFloor={meta.selectedFloor}
           onFloorChange={(floor) => dispatch(setPosMeta({ selectedFloor: floor }))}
           onSelectTable={(table) => {
-            if (normalizeAvailable(table)) dispatch(setSelectedTable(table.id))
+            dispatch(setSelectedTable(table.id))
+            if (table.floor) dispatch(setPosMeta({ selectedFloor: table.floor }))
           }}
           onStartOrder={onStartTableOrder}
           onRefresh={() => { void queryClient.invalidateQueries({ queryKey: ['tables'] }) }}
@@ -828,20 +842,7 @@ export default function POSPage() {
               onMetaChange={(patch) => dispatch(setPosMeta(patch))}
               tables={tables}
               selectedTableId={selectedTableId}
-              onTableChange={(id) => {
-                if (!id) {
-                  dispatch(setSelectedTable(null))
-                  dispatch(setActiveOrder({ id: null }))
-                  return
-                }
-                const table = tables.find((row) => row.id === id)
-                if (table) {
-                  void openRunningTable(table)
-                  return
-                }
-                dispatch(setSelectedTable(id))
-                dispatch(setActiveOrder({ id: null }))
-              }}
+              onTableChange={handleTableDropdownChange}
               floors={tableFloors}
               activeOrderNumber={activeOrderNumber}
             />
@@ -994,8 +995,4 @@ export default function POSPage() {
       </Dialog>
     </div>
   )
-}
-
-function normalizeAvailable(table: TableDto) {
-  return String(table.status).toLowerCase() === 'available'
 }

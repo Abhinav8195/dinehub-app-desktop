@@ -31,7 +31,7 @@ interface PosNormalLayoutProps {
   onOrderTypeChange: (type: 'dine-in' | 'takeaway' | 'delivery') => void
   tables: TableDto[]
   selectedTableId: string | null
-  onTableChange: (id: string) => void
+  onTableChange: (id: string | null) => void
   search: string
   onSearchChange: (value: string) => void
   items: MenuItemDto[]
