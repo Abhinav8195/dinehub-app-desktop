@@ -23,7 +23,7 @@ import { formatApiError } from '@/api/management-utils'
 import { useTaxSettings } from '@/hooks/useTaxSettings'
 import { useAuth } from '@/hooks/useAuth'
 import { checkOnline } from '@/api/client'
-import { withOfflineCache, enqueueSync, isNetworkFailure } from '@/lib/offline'
+import { withOfflineCache, enqueueSync, isNetworkFailure, cacheSet } from '@/lib/offline'
 import { APP_BASE } from '@/constants/navigation'
 import { CheckoutModal } from './components/CheckoutModal'
 import { ModifierSelectionDialog } from './components/ModifierSelectionDialog'
@@ -163,9 +163,9 @@ export default function POSPage() {
   const { data: tables = [] } = useQuery({
     queryKey: ['tables'],
     queryFn: () => withOfflineCache('tables', () => tablesApi.list()),
-    staleTime: 30_000,
-    refetchInterval: viewMode === 'tables' ? 30_000 : false,
-    refetchOnWindowFocus: false,
+    staleTime: 5_000,
+    refetchInterval: viewMode === 'tables' ? 10_000 : false,
+    refetchOnWindowFocus: true,
   })
 
   // Do not auto-pick a table — New Order / post-KOT always show the floor plan
@@ -452,47 +452,33 @@ export default function POSPage() {
         }
       }
 
-      dispatch(setActiveOrder({ id: order.id, orderNumber: order.orderNumber }))
-      if (alsoPrint) {
-        try {
-          await printKotTicket(pending, order)
-        } catch (error) {
-          toast.error(error instanceof Error ? error.message : 'KOT print failed')
-        }
-      }
-
       const kotTableId = selectedTableId || order.tableId || order.table?.id || null
       const offline = order.orderNumber.startsWith('OFF-')
-
-      // Optimistically mark table as OCCUPIED in React Query cache so floor plan shows it immediately in red
-      if (kotTableId) {
-        queryClient.setQueryData<TableDto[]>(['tables'], (prev = []) =>
-          prev.map((t) =>
-            t.id === kotTableId
-              ? {
-                  ...t,
-                  status: 'occupied',
-                  currentOrder: {
-                    id: order.id,
-                    orderNumber: order.orderNumber,
-                    status: order.status || 'confirmed',
-                    customerName: meta.customerName || order.customer?.name || 'Walk-in',
-                    total: order.total,
-                    createdAt: order.createdAt || new Date().toISOString(),
-                  },
-                }
-              : t,
-          ),
+      const occupiedPatch = (prev: TableDto[] = []): TableDto[] =>
+        prev.map((t) =>
+          t.id === kotTableId
+            ? {
+                ...t,
+                status: 'occupied',
+                currentOrder: {
+                  id: order.id,
+                  orderNumber: order.orderNumber,
+                  status: order.status || 'confirmed',
+                  customerName: meta.customerName || order.customer?.name || 'Walk-in',
+                  total: order.total,
+                  createdAt: order.createdAt || new Date().toISOString(),
+                },
+              }
+            : t,
         )
-        if (!offline) {
-          tablesApi.updateStatus(kotTableId, 'OCCUPIED').catch(() => {})
-        }
+
+      // 1) Mark occupied in UI cache immediately (before print / redirect).
+      if (kotTableId) {
+        queryClient.setQueryData<TableDto[]>(['tables'], occupiedPatch)
       }
 
+      // 2) Redirect to table floor RIGHT AWAY — never wait on printer dialog.
       dispatch(markKotSent(pending.map((line) => line.lineKey)))
-      queryClient.invalidateQueries({ queryKey: ['orders'] })
-      queryClient.invalidateQueries({ queryKey: ['tables'] })
-      void queryClient.refetchQueries({ queryKey: ['tables'] })
       toast.success(
         alsoPrint
           ? offline
@@ -504,8 +490,30 @@ export default function POSPage() {
               ? `KOT sent · ${order.orderNumber} · table booked — add more anytime`
               : `KOT sent · ${order.orderNumber}`,
       )
-      // Always return to table selector after KOT / KOT & Print (online or offline).
       dispatch(startNewOrder())
+
+      // 3) Print in background so OS print dialog cannot block table redirect.
+      if (alsoPrint) {
+        void printKotTicket(pending, order).catch((error) => {
+          toast.error(error instanceof Error ? error.message : 'KOT print failed')
+        })
+      }
+
+      // 4) Persist OCCUPIED + refresh tables without letting stale offline cache win.
+      void (async () => {
+        if (kotTableId && !offline) {
+          await tablesApi.updateStatus(kotTableId, 'OCCUPIED').catch(() => {})
+        }
+        try {
+          const fresh = await tablesApi.list()
+          const merged = occupiedPatch(Array.isArray(fresh) ? fresh : [])
+          queryClient.setQueryData(['tables'], merged)
+          await cacheSet('tables', merged).catch(() => {})
+        } catch {
+          queryClient.setQueryData<TableDto[]>(['tables'], occupiedPatch)
+        }
+        queryClient.invalidateQueries({ queryKey: ['orders'] })
+      })()
     } catch (error) {
       toast.error(formatApiError(error, 'Could not send KOT'))
     } finally {
