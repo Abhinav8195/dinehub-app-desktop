@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import reducer, {
-  addToCart, discardHeldOrder, holdOrder, replaceCartItem, resumeOrder, setOrderType, setSelectedTable
+  addToCart, discardHeldOrder, holdOrder, replaceCartItem, resumeOrder, setOrderType, setSelectedTable, startNewOrder, setActiveOrder, markKotSent,
 } from './posSlice'
 import type { OrderItem } from '@/types'
 
@@ -58,5 +58,24 @@ describe('POS hold / resume', () => {
 
     state = reducer(state, discardHeldOrder(state.heldOrders[0].id))
     expect(state.heldOrders).toHaveLength(0)
+  })
+})
+
+describe('POS KOT / Save redirect', () => {
+  it('startNewOrder clears session and lands on table selector', () => {
+    let state = reducer(undefined, setOrderType('dine-in'))
+    state = reducer(state, setSelectedTable('table-4'))
+    state = reducer(state, setActiveOrder({ id: 'ord-1', orderNumber: '#1100' }))
+    state = reducer(state, addToCart(line('menu:burger:large')))
+    state = reducer(state, markKotSent(['menu:burger:large']))
+
+    state = reducer(state, startNewOrder())
+
+    expect(state.viewMode).toBe('tables')
+    expect(state.cart).toHaveLength(0)
+    expect(state.kotSentKeys).toHaveLength(0)
+    expect(state.selectedTableId).toBeNull()
+    expect(state.activeOrderId).toBeNull()
+    expect(state.activeOrderNumber).toBeNull()
   })
 })

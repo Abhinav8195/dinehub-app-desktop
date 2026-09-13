@@ -524,10 +524,18 @@ export default function POSPage() {
   const handleOrderSuccess = async (orderNumber: string, total: number, paymentMethod: string, serverOrder?: PosOrder) => {
     const offline = orderNumber.startsWith('OFF-')
     const paidTableId = selectedTableId || serverOrder?.tableId || serverOrder?.table?.id || null
+    const freeTable = Boolean(paidTableId && !offline && paymentMethod !== 'DUE')
 
-    // Always free the dine-in table after successful Save / Save & Print.
-    if (paidTableId && !offline && paymentMethod !== 'DUE') {
-      await tablesApi.updateStatus(paidTableId, 'AVAILABLE').catch(() => {})
+    const freePatch = (prev: TableDto[] = []): TableDto[] =>
+      prev.map((t) =>
+        t.id === paidTableId
+          ? { ...t, status: 'available', currentOrder: null }
+          : t,
+      )
+
+    // Free table in UI immediately so floor plan is green before any print/refetch.
+    if (freeTable) {
+      queryClient.setQueryData<TableDto[]>(['tables'], freePatch)
     }
 
     toast.success(
@@ -542,22 +550,35 @@ export default function POSPage() {
       ? serverOrder.gstAmount + serverOrder.sgstAmount + serverOrder.cgstAmount
       : displayBreakdown.gstAmount + displayBreakdown.sgstAmount + displayBreakdown.cgstAmount
 
+    const cartSnapshot = [...cart]
+    const metaSnapshot = { ...meta }
+    const taxSnapshot = taxSettings
+    const discountSnapshot = discount
+    const checkoutPrintSnapshot = checkoutPrint
+
     dispatch(addOrder({
       id: serverOrder?.id ?? orderNumber,
       orderNumber,
       type: orderType,
       status: serverOrder?.status ?? 'confirmed',
-      items: [...cart],
+      items: cartSnapshot,
       subtotal: finalSubtotal,
       tax: finalTax,
-      discount: (serverOrder?.discount ?? 0) + discount,
+      discount: (serverOrder?.discount ?? 0) + discountSnapshot,
       total,
       tableId: paidTableId || undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }))
 
-    if (checkoutPrint) {
+    // Redirect to table selector immediately — do not wait on printer or status API.
+    dispatch(startNewOrder())
+    setLoyalty(false)
+    setFeedbackSms(false)
+    setMarkedPaid(true)
+    setQuickPay('CASH')
+
+    if (checkoutPrintSnapshot) {
       const html = buildReceiptHtml({
         orderNumber,
         invoiceNumber: (serverOrder as (PosOrder & { invoiceNumber?: string }) | undefined)?.invoiceNumber,
@@ -569,38 +590,46 @@ export default function POSPage() {
           phone: typeof restaurant?.phone === 'string' ? restaurant.phone : undefined,
           gstin: typeof restaurant?.gstin === 'string' ? restaurant.gstin : undefined,
         },
-        customerName: serverOrder?.customer?.name || meta.customerName || undefined,
-        table: serverOrder?.table?.label || (tables.find((t) => t.id === paidTableId) ? tableDisplayLabel(tables.find((t) => t.id === paidTableId)!) : undefined),
+        customerName: serverOrder?.customer?.name || metaSnapshot.customerName || undefined,
+        table: serverOrder?.table?.label
+          || (paidTableId && tables.find((t) => t.id === paidTableId)
+            ? tableDisplayLabel(tables.find((t) => t.id === paidTableId)!)
+            : undefined),
         orderType: orderType === 'dine-in' ? 'Dine In' : orderType === 'delivery' ? 'Delivery' : 'Pick Up',
-        items: cart.map((i) => ({
+        items: cartSnapshot.map((i) => ({
           name: `${i.name}${i.variantName ? ` (${i.variantName})` : ''}`,
           qty: i.quantity,
           price: i.price,
         })),
         subtotal: finalSubtotal,
         taxes: serverOrder ? [
-          { name: 'GST', rate: taxSettings?.gstPercent, amount: serverOrder.gstAmount },
-          { name: 'SGST', rate: taxSettings?.sgstPercent, amount: serverOrder.sgstAmount },
-          { name: 'CGST', rate: taxSettings?.cgstPercent, amount: serverOrder.cgstAmount },
+          { name: 'GST', rate: taxSnapshot?.gstPercent, amount: serverOrder.gstAmount },
+          { name: 'SGST', rate: taxSnapshot?.sgstPercent, amount: serverOrder.sgstAmount },
+          { name: 'CGST', rate: taxSnapshot?.cgstPercent, amount: serverOrder.cgstAmount },
         ].filter((tax) => tax.amount > 0) : [{ name: 'Tax', amount: finalTax }],
-        discount: (serverOrder?.discount ?? 0) + discount,
+        discount: (serverOrder?.discount ?? 0) + discountSnapshot,
         total,
         paymentMethod,
         footerText: typeof restaurant?.receiptFooter === 'string' ? restaurant.receiptFooter : undefined,
         date: serverOrder?.createdAt,
       })
-      printReceiptHtml(html).catch(() => {})
+      void printReceiptHtml(html).catch(() => {})
     }
 
-    dispatch(startNewOrder())
-    setLoyalty(false)
-    setFeedbackSms(false)
-    setMarkedPaid(true)
-    setQuickPay('CASH')
-    queryClient.invalidateQueries({ queryKey: ['orders'] })
-    queryClient.invalidateQueries({ queryKey: ['tables'] })
-    // Bypass sticky offline empty/stale table cache after payment.
-    void queryClient.refetchQueries({ queryKey: ['tables'] })
+    void (async () => {
+      if (freeTable && paidTableId) {
+        await tablesApi.updateStatus(paidTableId, 'AVAILABLE').catch(() => {})
+      }
+      try {
+        const fresh = await tablesApi.list()
+        const merged = freeTable ? freePatch(Array.isArray(fresh) ? fresh : []) : (Array.isArray(fresh) ? fresh : [])
+        queryClient.setQueryData(['tables'], merged)
+        await cacheSet('tables', merged).catch(() => {})
+      } catch {
+        if (freeTable) queryClient.setQueryData<TableDto[]>(['tables'], freePatch)
+      }
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+    })()
   }
 
   const lastLine = cart[cart.length - 1]
