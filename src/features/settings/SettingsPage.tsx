@@ -22,6 +22,7 @@ import { printersApi } from '@/api/phase1.api'
 import { useAuth } from '@/hooks/useAuth'
 import { useSelector } from 'react-redux'
 import type { RootState } from '@/store'
+import { BranchManagement } from './BranchManagement'
 
 export default function SettingsPage() {
   const { data: taxSettings } = useTaxSettings()
@@ -170,6 +171,7 @@ export default function SettingsPage() {
         <Tabs defaultValue="restaurant">
           <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="restaurant"><Building className="h-3.5 w-3.5 mr-1" /> Restaurant</TabsTrigger>
+            <TabsTrigger value="branches"><Building className="h-3.5 w-3.5 mr-1" /> Branches</TabsTrigger>
             <TabsTrigger value="printer"><Printer className="h-3.5 w-3.5 mr-1" /> Printers</TabsTrigger>
             <TabsTrigger value="tax">Taxes</TabsTrigger>
             <TabsTrigger value="payment"><CreditCard className="h-3.5 w-3.5 mr-1" /> Payment</TabsTrigger>
@@ -217,6 +219,10 @@ export default function SettingsPage() {
                 })} disabled={saveRestaurantMutation.isPending}><Save className="h-4 w-4 mr-2" /> Save Restaurant</Button>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="branches" className="mt-6">
+            <BranchManagement />
           </TabsContent>
 
           <TabsContent value="printer" className="mt-6 space-y-4">

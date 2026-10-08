@@ -115,7 +115,7 @@ function buildRoutes(): RouteObject[] {
             { path: 'users/invites', element: featurePage('INVITATIONS', <UsersManagementPage />, 'users.invites.view') },
             { path: 'users/audit', element: featurePage('AUDIT_LOGS', <UsersManagementPage />, 'audit.view') },
             { path: 'employees', element: featurePage('EMPLOYEES', <EmployeesPage />, 'employees.view') },
-            { path: 'employees/attendance', element: featurePage('EMPLOYEES', <AttendancePage />, 'employees.view') },
+            { path: 'employees/attendance', element: featurePage('ATTENDANCE', <AttendancePage />, 'attendance.view') },
             { path: 'staff', element: featurePage('STAFF_PERMISSIONS', <StaffPage />, 'staff.view') },
             { path: 'reservations', element: featurePage('RESERVATIONS', <ReservationsPage />, 'reservations.view') },
             { path: 'reports', element: featurePage('REPORTS', <ReportsPage />, 'reports.view') },

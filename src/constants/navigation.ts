@@ -175,10 +175,8 @@ export const NAVIGATION: NavItem[] = [
     title: 'Attendance',
     href: p('/employees/attendance'),
     icon: Clock3,
-    // Temporary compatibility until ATTENDANCE is present in every backend
-    // plan/permission seed. API actions remain server-authorized.
-    permission: 'employees.view',
-    feature: 'EMPLOYEES'
+    permission: 'attendance.view',
+    feature: 'ATTENDANCE'
   },
   {
     id: 'reservations',
